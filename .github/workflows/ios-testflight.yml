@@ -1,0 +1,36 @@
+name: iOS TestFlight
+
+# Phase B: enable after Apple Developer enrollment and GitHub secrets are configured.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  testflight:
+    runs-on: macos-14
+    if: ${{ secrets.DEVELOPMENT_TEAM != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build archive
+        env:
+          DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+        run: |
+          xcodebuild archive \
+            -project Recall.xcodeproj \
+            -scheme Recall \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath $RUNNER_TEMP/Recall.xcarchive \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
+
+      - name: Upload to TestFlight
+        run: echo "Configure export + upload after Phase B signing secrets are added."

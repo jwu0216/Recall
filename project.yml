@@ -1,0 +1,107 @@
+name: Recall
+options:
+  bundleIdPrefix: com.jwu0216
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  RecallCore:
+    type: framework
+    platform: iOS
+    sources:
+      - RecallCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall.core
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+
+  Recall:
+    type: application
+    platform: iOS
+    sources:
+      - Recall
+    dependencies:
+      - target: RecallCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Recall
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Recall indexes your photos so you can search them with natural language."
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_ENTITLEMENTS: Recall/Recall.entitlements
+    entitlements:
+      path: Recall/Recall.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jwu0216.recall
+
+  RecallShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - RecallShare
+    dependencies:
+      - target: RecallCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall.share
+        INFOPLIST_FILE: RecallShare/Info.plist
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_ENTITLEMENTS: RecallShare/RecallShare.entitlements
+    entitlements:
+      path: RecallShare/RecallShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jwu0216.recall
+
+  RecallCoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - RecallCoreTests
+    dependencies:
+      - target: RecallCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall.core.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Recall:
+    build:
+      targets:
+        Recall: all
+        RecallCore: all
+        RecallShare: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - RecallCoreTests
+    archive:
+      config: Release
+
+  RecallShare:
+    build:
+      targets:
+        RecallShare: all
+        RecallCore: all
+    run:
+      config: Debug
+      askForAppToLaunch: true
