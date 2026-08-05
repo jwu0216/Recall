@@ -16,9 +16,14 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 onboardingRow(
+                    icon: "plus.circle",
+                    title: "Add it yourself",
+                    detail: "Type a note, paste a link, or attach a photo/PDF from inside Recall."
+                )
+                onboardingRow(
                     icon: "square.and.arrow.up",
-                    title: "Share from any app",
-                    detail: "Links, images, PDFs, and text — Safari, Mail, Notes, and more."
+                    title: "Or share from any app",
+                    detail: "Safari, Mail, Notes, and more — tap Share → Recall."
                 )
                 onboardingRow(
                     icon: "sparkle.magnifyingglass",

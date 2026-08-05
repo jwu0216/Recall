@@ -18,6 +18,8 @@ public final class MemoryItem {
     public var mediaRelativePath: String?
     public var processingStatusRaw: String
     public var lastIndexedAt: Date?
+    /// When true, Refresh search index keeps title/summary/tags and only rebuilds embeddings.
+    public var userEditedLabels: Bool = false
 
     public var source: MemorySource {
         get { MemorySource(rawValue: sourceRaw) ?? .manual }
@@ -59,7 +61,8 @@ public final class MemoryItem {
         photoLocalIdentifier: String? = nil,
         mediaRelativePath: String? = nil,
         processingStatus: ProcessingStatus = .pending,
-        lastIndexedAt: Date? = nil
+        lastIndexedAt: Date? = nil,
+        userEditedLabels: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -76,6 +79,7 @@ public final class MemoryItem {
         self.mediaRelativePath = mediaRelativePath
         self.processingStatusRaw = processingStatus.rawValue
         self.lastIndexedAt = lastIndexedAt
+        self.userEditedLabels = userEditedLabels
     }
 
     public func snapshot() -> MemoryItemSnapshot {

@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var isProcessing = false
     @State private var errorMessage: String?
     @State private var statusBanner: String?
+    @State private var showingAddMemory = false
 
     var body: some View {
         NavigationStack {
@@ -60,11 +61,17 @@ struct HomeView: View {
                         GroupBox("How to get started") {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("1. Add your OpenAI API key in Settings")
-                                Text("2. In Safari (or any app), tap Share → Recall")
-                                Text("3. Come back here and ask for what you saved")
+                                Text("2. Tap + to add a note, or Share → Recall from another app")
+                                Text("3. Ask for what you saved")
                             }
                             .font(.subheadline)
                             .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button("Add a memory") {
+                                showingAddMemory = true
+                            }
+                            .buttonStyle(.bordered)
+                            .padding(.top, 4)
                         }
                     }
 
@@ -88,14 +95,14 @@ struct HomeView: View {
                             }
                         }
                     } else if !answer.isEmpty {
-                        Text("No strong matches — try different words, or save more with Share.")
+                        Text("No strong matches — try different words, or add another memory.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
 
                     GroupBox("Recent") {
                         if memories.isEmpty {
-                            Text("Nothing saved yet. Use Share → Recall from another app.")
+                            Text("Nothing saved yet. Tap + to add something, or Share from another app.")
                                 .foregroundStyle(.secondary)
                         } else {
                             VStack(spacing: 12) {
@@ -119,6 +126,19 @@ struct HomeView: View {
                 .padding()
             }
             .navigationTitle("Recall")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddMemory = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add memory")
+                }
+            }
+            .sheet(isPresented: $showingAddMemory) {
+                AddMemoryView()
+            }
             .refreshable {
                 await processPendingJobsIfNeeded()
             }
@@ -138,7 +158,7 @@ struct HomeView: View {
         let readyMemories = memories.filter { $0.processingStatus == .ready || $0.embedding != nil }
 
         guard !memories.isEmpty else {
-            errorMessage = "Save something with Share first, then ask again."
+            errorMessage = "Add a memory first (tap +), then ask again."
             return
         }
 
@@ -151,11 +171,11 @@ struct HomeView: View {
 
         do {
             let queryEmbedding = try await service.embed(question)
-            var results = VectorSearchService.search(queryEmbedding: queryEmbedding, in: readyMemories)
-
-            if results.isEmpty {
-                results = VectorSearchService.keywordFallback(query: question, in: memories)
-            }
+            let results = VectorSearchService.relevantMatches(
+                query: question,
+                queryEmbedding: queryEmbedding,
+                in: readyMemories.isEmpty ? memories : readyMemories
+            )
 
             citedResults = results
 
@@ -164,16 +184,58 @@ struct HomeView: View {
                 return
             }
 
+            let matchedItems = results.map(\.item)
             let response = try await service.chat(
-                system: "You are Recall, a personal memory assistant. Answer using only the provided memories. Cite memory titles when helpful. If nothing matches, say you could not find it.",
+                system: """
+                You are Recall, a personal memory assistant for the user's private notes.
+                Answer briefly from the matched memories. Mention the memory title.
+                """,
                 messages: [ChatTurn(role: "user", content: question)],
-                context: results.map(\.item)
+                context: matchedItems
             )
 
-            answer = response
+            // Search already found matches — never show a false "not found" from the model.
+            if looksLikeNotFound(response) {
+                answer = groundedAnswer(for: question, from: matchedItems)
+            } else {
+                answer = response
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func looksLikeNotFound(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let phrases = [
+            "could not find",
+            "couldn't find",
+            "couldn’t find",
+            "no matching",
+            "don't have anything",
+            "do not have anything",
+            "wasn't able to find",
+            "was not able to find",
+            "no memories",
+            "nothing in your"
+        ]
+        return phrases.contains { lower.contains($0) }
+    }
+
+    private func groundedAnswer(for question: String, from items: [MemoryItemSnapshot]) -> String {
+        guard let top = items.first else {
+            return "I couldn't find that in your saved memories yet."
+        }
+
+        let title = top.title ?? "Untitled memory"
+        if let summary = top.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+            return "From your memory “\(title)”: \(summary)"
+        }
+        if let text = top.extractedText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            let snippet = text.count > 180 ? String(text.prefix(180)) + "…" : text
+            return "From your memory “\(title)”: \(snippet)"
+        }
+        return "I found a matching memory: “\(title)”."
     }
 
     private func processPendingJobsIfNeeded() async {
