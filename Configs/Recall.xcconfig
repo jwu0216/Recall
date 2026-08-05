@@ -1,0 +1,17 @@
+#include "Shared.xcconfig"
+
+PRODUCT_NAME = Recall
+PRODUCT_MODULE_NAME = Recall
+WRAPPER_NAME = Recall.app
+EXECUTABLE_NAME = Recall
+PRODUCT_BUNDLE_IDENTIFIER = com.jwu0216.recall
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_CFBundleDisplayName = Recall
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait
+INFOPLIST_KEY_NSPhotoLibraryUsageDescription = Recall indexes your photos so you can search them with natural language.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+CODE_SIGN_ENTITLEMENTS = Recall/Recall.entitlements
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks

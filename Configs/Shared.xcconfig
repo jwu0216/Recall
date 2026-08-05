@@ -1,0 +1,6 @@
+// Shared build settings for all Recall targets.
+// Explicit wrapper names avoid empty PRODUCT_NAME → ".app"/".framework" collisions in Xcode 26.
+SWIFT_VERSION = 5.9
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+ALWAYS_SEARCH_USER_PATHS = NO
+CLANG_ENABLE_MODULES = YES
