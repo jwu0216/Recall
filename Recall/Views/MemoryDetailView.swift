@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import RecallCore
 
 struct MemoryDetailView: View {
@@ -13,6 +14,7 @@ struct MemoryDetailView: View {
     @State private var editableSummary = ""
     @State private var editableTags: [String] = []
     @State private var editStatus: String?
+    @State private var mediaImage: UIImage?
 
     init(memoryID: UUID) {
         self.memoryID = memoryID
@@ -34,6 +36,15 @@ struct MemoryDetailView: View {
                                 saveMetadata(for: memory)
                             }
                         }
+
+                    if let mediaImage {
+                        Image(uiImage: mediaImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .accessibilityLabel("Memory photo")
+                    }
 
                     GroupBox("Summary") {
                         TextField("Add a short summary", text: $editableSummary, axis: .vertical)
@@ -112,6 +123,10 @@ struct MemoryDetailView: View {
             }
             .onAppear {
                 syncEditors(from: memory)
+                mediaImage = Self.loadMediaImage(for: memory)
+            }
+            .onChange(of: memory.mediaRelativePath) { _, _ in
+                mediaImage = Self.loadMediaImage(for: memory)
             }
             .onChange(of: memory.title) { oldTitle, newTitle in
                 if normalized(editableTitle) == normalized(oldTitle ?? "") {
@@ -228,5 +243,20 @@ struct MemoryDetailView: View {
 
     private func normalized(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func loadMediaImage(for memory: MemoryItem) -> UIImage? {
+        guard let relativePath = memory.mediaRelativePath,
+              let mediaDirectory = AppGroupPaths.shared.mediaDirectory
+        else {
+            return nil
+        }
+
+        let fileURL = mediaDirectory.appendingPathComponent(relativePath)
+        let ext = fileURL.pathExtension.lowercased()
+        let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "webp", "gif"]
+        guard imageExtensions.contains(ext) else { return nil }
+
+        return UIImage(contentsOfFile: fileURL.path)
     }
 }
