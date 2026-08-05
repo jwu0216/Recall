@@ -54,9 +54,11 @@ public final class MemoryProcessor {
         item.title = enrichment.title ?? item.title
         item.summary = enrichment.summary
         item.tags = enrichment.tags
-        if item.extractedText == nil || item.extractedText?.isEmpty == true {
-            item.extractedText = extractedText
-        }
+        // Keep the user's original words searchable even if AI rewrites the title.
+        item.extractedText = mergedExtractedText(
+            existing: item.extractedText ?? extractedText,
+            originalNote: job.note
+        )
         item.updatedAt = .now
         item.lastIndexedAt = .now
 
@@ -64,9 +66,12 @@ public final class MemoryProcessor {
             item.title,
             item.summary,
             item.extractedText,
+            job.note,
+            item.sourceURL?.host,
+            item.sourceURL?.absoluteString,
             item.tags.joined(separator: " ")
         ]
-            .compactMap { $0 }
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
 
@@ -106,6 +111,56 @@ public final class MemoryProcessor {
         return (try? modelContext.fetchCount(descriptor)) ?? 0
     }
 
+    /// Refresh tags/summary from source text, then rebuild embeddings for Ask.
+    public func reindexEmbeddings(modelContext: ModelContext) async throws -> Int {
+        let descriptor = FetchDescriptor<MemoryItem>(sortBy: [SortDescriptor(\.createdAt)])
+        let items = try modelContext.fetch(descriptor)
+        var updated = 0
+
+        for item in items {
+            let sourceText = [
+                item.extractedText,
+                item.title,
+                item.sourceURL?.absoluteString
+            ]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+
+            if !sourceText.isEmpty, !item.userEditedLabels {
+                let enrichment = try await aiService.summarizeText(sourceText)
+                // Keep the existing title; refresh summary/tags for search quality.
+                if let summary = enrichment.summary, !summary.isEmpty {
+                    item.summary = summary
+                }
+                if !enrichment.tags.isEmpty {
+                    item.tags = enrichment.tags
+                }
+            }
+
+            let embedText = [
+                item.title,
+                item.summary,
+                item.extractedText,
+                item.sourceURL?.host,
+                item.sourceURL?.absoluteString,
+                item.tags.joined(separator: " ")
+            ]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+
+            guard !embedText.isEmpty else { continue }
+            item.embedding = try await aiService.embed(embedText)
+            item.lastIndexedAt = .now
+            item.updatedAt = .now
+            updated += 1
+        }
+
+        try modelContext.save()
+        return updated
+    }
+
     private func enrich(
         job: ProcessingJob,
         extractedText: String?,
@@ -136,5 +191,24 @@ public final class MemoryProcessor {
             return String(extractedText.prefix(80))
         }
         return nil
+    }
+
+    private func mergedExtractedText(existing: String?, originalNote: String?) -> String? {
+        let existingText = existing?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let note = originalNote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        switch (existingText.isEmpty, note.isEmpty) {
+        case (true, true):
+            return nil
+        case (true, false):
+            return note
+        case (false, true):
+            return existingText
+        case (false, false):
+            if existingText.localizedCaseInsensitiveContains(note) {
+                return existingText
+            }
+            return note + "\n" + existingText
+        }
     }
 }

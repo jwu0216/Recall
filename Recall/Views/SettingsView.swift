@@ -31,7 +31,7 @@ struct SettingsView: View {
                     Text("Your key stays on this device. Subscriptions come later for public launch.")
                 }
 
-                Section("Library") {
+                Section {
                     LabeledContent("Memories", value: "\(memories.count)")
                     LabeledContent("Pending tags", value: "\(pendingJobs.count)")
                     LabeledContent("Failed", value: "\(failedJobs.count)")
@@ -39,6 +39,15 @@ struct SettingsView: View {
                         Task { await processPending() }
                     }
                     .disabled(isProcessing || pendingJobs.isEmpty || apiKey.isEmpty)
+
+                    Button(isProcessing ? "Refreshing…" : "Refresh search index") {
+                        Task { await rebuildSearchIndex() }
+                    }
+                    .disabled(isProcessing || memories.isEmpty || apiKey.isEmpty)
+                } header: {
+                    Text("Library")
+                } footer: {
+                    Text("Refresh rebuilds embeddings for Ask. Memories you’ve edited keep their title, summary, and tags.")
                 }
 
                 Section {
@@ -50,7 +59,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    Text("Recall V1: Share from any app, then ask in plain English. Designed so you’ll be proud to show people — not a dump of half-finished features.")
+                    Text("Recall V1: Add memories manually or via Share, then ask in plain English.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -76,5 +85,21 @@ struct SettingsView: View {
         let service = OpenAIService(configuration: OpenAIConfiguration(apiKey: key))
         await MemoryProcessor(aiService: service).processPendingJobs(modelContext: modelContext)
         statusMessage = "Finished processing queue."
+    }
+
+    private func rebuildSearchIndex() async {
+        guard let key = APIKeyStore.load(), !key.isEmpty else {
+            statusMessage = RecallStoreError.missingAPIKey.localizedDescription
+            return
+        }
+        isProcessing = true
+        defer { isProcessing = false }
+        do {
+            let service = OpenAIService(configuration: OpenAIConfiguration(apiKey: key))
+            let count = try await MemoryProcessor(aiService: service).reindexEmbeddings(modelContext: modelContext)
+            statusMessage = "Refreshed search index for \(count) memories."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
     }
 }
