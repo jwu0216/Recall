@@ -14,6 +14,9 @@ struct HomeView: View {
     @State private var answer = ""
     @State private var citedResults: [MemorySearchResult] = []
     @State private var isSearching = false
+    @State private var isGeneratingAnswer = false
+    @State private var answerOpacity: Double = 0
+    @State private var askGeneration = 0
     @State private var isProcessing = false
     @State private var errorMessage: String?
     @State private var statusBanner: String?
@@ -57,7 +60,7 @@ struct HomeView: View {
                         .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
                     }
 
-                    if memories.isEmpty && answer.isEmpty {
+                    if memories.isEmpty && answer.isEmpty && !isSearching {
                         GroupBox("How to get started") {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("1. Add your OpenAI API key in Settings")
@@ -75,11 +78,19 @@ struct HomeView: View {
                         }
                     }
 
-                    if !answer.isEmpty {
+                    if isGeneratingAnswer {
+                        GroupBox("Answer") {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .transition(.opacity)
+                    } else if !answer.isEmpty {
                         GroupBox("Answer") {
                             Text(answer)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .opacity(answerOpacity)
                         }
+                        .transition(.opacity.combined(with: .offset(y: 6)))
                     }
 
                     if !citedResults.isEmpty {
@@ -94,7 +105,8 @@ struct HomeView: View {
                                 }
                             }
                         }
-                    } else if !answer.isEmpty {
+                        .transition(.opacity.combined(with: .offset(y: 8)))
+                    } else if !answer.isEmpty && !isGeneratingAnswer {
                         Text("No strong matches — try different words, or add another memory.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -124,6 +136,9 @@ struct HomeView: View {
                     }
                 }
                 .padding()
+                .animation(.easeOut(duration: 0.35), value: citedResults.map(\.id))
+                .animation(.easeOut(duration: 0.35), value: isGeneratingAnswer)
+                .animation(.easeOut(duration: 0.45), value: answerOpacity)
             }
             .navigationTitle("Recall")
             .toolbar {
@@ -149,11 +164,20 @@ struct HomeView: View {
     }
 
     private func askRecall() async {
+        askGeneration += 1
+        let generation = askGeneration
+
         isSearching = true
+        isGeneratingAnswer = false
         errorMessage = nil
         answer = ""
+        answerOpacity = 0
         citedResults = []
-        defer { isSearching = false }
+        defer {
+            if generation == askGeneration {
+                isSearching = false
+            }
+        }
 
         let readyMemories = memories.filter { $0.processingStatus == .ready || $0.embedding != nil }
 
@@ -171,17 +195,26 @@ struct HomeView: View {
 
         do {
             let queryEmbedding = try await service.embed(question)
+            guard generation == askGeneration else { return }
+
             let results = VectorSearchService.relevantMatches(
                 query: question,
                 queryEmbedding: queryEmbedding,
                 in: readyMemories.isEmpty ? memories : readyMemories
             )
 
-            citedResults = results
+            // Show matches immediately while the answer is still loading.
+            withAnimation(.easeOut(duration: 0.35)) {
+                citedResults = results
+            }
 
             if results.isEmpty {
-                answer = "I couldn't find that in your saved memories yet."
+                await presentAnswer("I couldn't find that in your saved memories yet.", generation: generation)
                 return
+            }
+
+            withAnimation(.easeOut(duration: 0.25)) {
+                isGeneratingAnswer = true
             }
 
             let matchedItems = results.map(\.item)
@@ -193,16 +226,52 @@ struct HomeView: View {
                 messages: [ChatTurn(role: "user", content: question)],
                 context: matchedItems
             )
+            guard generation == askGeneration else { return }
 
             // Search already found matches — never show a false "not found" from the model.
-            if looksLikeNotFound(response) {
-                answer = groundedAnswer(for: question, from: matchedItems)
-            } else {
-                answer = response
-            }
+            let finalAnswer = looksLikeNotFound(response)
+                ? groundedAnswer(for: question, from: matchedItems)
+                : response
+            await presentAnswer(finalAnswer, generation: generation)
         } catch {
+            guard generation == askGeneration else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                isGeneratingAnswer = false
+            }
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Fades the answer in and reveals it in short word bursts, similar to AI overview UIs.
+    private func presentAnswer(_ fullText: String, generation: Int) async {
+        guard generation == askGeneration else { return }
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            isGeneratingAnswer = false
+            answer = ""
+            answerOpacity = 0
+        }
+
+        let words = fullText.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        var assembled = ""
+
+        withAnimation(.easeOut(duration: 0.45)) {
+            answerOpacity = 1
+        }
+
+        for batchStart in stride(from: 0, to: words.count, by: 2) {
+            guard generation == askGeneration else { return }
+            let end = min(batchStart + 2, words.count)
+            let batch = words[batchStart..<end].joined(separator: " ")
+            if !assembled.isEmpty { assembled += " " }
+            assembled += batch
+            answer = assembled
+            try? await Task.sleep(for: .milliseconds(28))
+        }
+
+        guard generation == askGeneration else { return }
+        answer = fullText
+        answerOpacity = 1
     }
 
     private func looksLikeNotFound(_ text: String) -> Bool {

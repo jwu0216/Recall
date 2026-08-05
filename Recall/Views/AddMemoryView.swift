@@ -52,15 +52,25 @@ struct AddMemoryView: View {
                 Section("Attachment (optional)") {
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         Label(
-                            selectedImageData == nil ? "Add photo" : "Photo selected",
-                            systemImage: selectedImageData == nil ? "photo" : "checkmark.circle.fill"
+                            selectedImageData == nil ? "Add photo" : "Change photo",
+                            systemImage: "photo"
                         )
                     }
                     .onChange(of: selectedPhoto) { _, item in
                         Task { await loadPhoto(item) }
                     }
 
-                    if selectedImageData != nil {
+                    if let imageData = selectedImageData, let preview = UIImage(data: imageData) {
+                        Image(uiImage: preview)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 160)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                            .accessibilityLabel("Selected photo preview")
+
                         Button("Remove photo", role: .destructive) {
                             selectedPhoto = nil
                             selectedImageData = nil

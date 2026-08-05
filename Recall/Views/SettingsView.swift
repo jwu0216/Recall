@@ -9,7 +9,8 @@ struct SettingsView: View {
     @Query private var memories: [MemoryItem]
 
     @State private var apiKey = APIKeyStore.load() ?? ""
-    @State private var statusMessage: String?
+    @State private var apiKeyStatus: String?
+    @State private var libraryStatus: String?
     @State private var isProcessing = false
 
     var body: some View {
@@ -20,15 +21,21 @@ struct SettingsView: View {
                     Button("Save API Key") {
                         do {
                             try APIKeyStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-                            statusMessage = "API key saved to Keychain."
+                            apiKeyStatus = "API key saved."
                         } catch {
-                            statusMessage = error.localizedDescription
+                            apiKeyStatus = error.localizedDescription
                         }
                     }
                 } header: {
                     Text("OpenAI (dev mode)")
                 } footer: {
-                    Text("Your key stays on this device. Subscriptions come later for public launch.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your key stays on this device. Subscriptions come later for public launch.")
+                        if let apiKeyStatus {
+                            Text(apiKeyStatus)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section {
@@ -47,7 +54,13 @@ struct SettingsView: View {
                 } header: {
                     Text("Library")
                 } footer: {
-                    Text("Refresh rebuilds embeddings for Ask. Memories you’ve edited keep their title, summary, and tags.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Refresh rebuilds embeddings for Ask. Memories you’ve edited keep their title, summary, and tags.")
+                        if let libraryStatus {
+                            Text(libraryStatus)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section {
@@ -63,13 +76,6 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-
-                if let statusMessage {
-                    Section {
-                        Text(statusMessage)
-                            .foregroundStyle(.secondary)
-                    }
-                }
             }
             .navigationTitle("Settings")
         }
@@ -77,19 +83,19 @@ struct SettingsView: View {
 
     private func processPending() async {
         guard let key = APIKeyStore.load(), !key.isEmpty else {
-            statusMessage = RecallStoreError.missingAPIKey.localizedDescription
+            libraryStatus = RecallStoreError.missingAPIKey.localizedDescription
             return
         }
         isProcessing = true
         defer { isProcessing = false }
         let service = OpenAIService(configuration: OpenAIConfiguration(apiKey: key))
         await MemoryProcessor(aiService: service).processPendingJobs(modelContext: modelContext)
-        statusMessage = "Finished processing queue."
+        libraryStatus = "Finished processing queue."
     }
 
     private func rebuildSearchIndex() async {
         guard let key = APIKeyStore.load(), !key.isEmpty else {
-            statusMessage = RecallStoreError.missingAPIKey.localizedDescription
+            libraryStatus = RecallStoreError.missingAPIKey.localizedDescription
             return
         }
         isProcessing = true
@@ -97,9 +103,9 @@ struct SettingsView: View {
         do {
             let service = OpenAIService(configuration: OpenAIConfiguration(apiKey: key))
             let count = try await MemoryProcessor(aiService: service).reindexEmbeddings(modelContext: modelContext)
-            statusMessage = "Refreshed search index for \(count) memories."
+            libraryStatus = "Refreshed search index for \(count) memories."
         } catch {
-            statusMessage = error.localizedDescription
+            libraryStatus = error.localizedDescription
         }
     }
 }
