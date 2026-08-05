@@ -5,11 +5,18 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
   groupSortPosition: top
+  # Prefer a stable project format; Xcode 26 objectVersion 77 has been dropping PRODUCT_NAME in IDE builds.
+  xcodeVersion: "15.0"
 
 settings:
   base:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: ""
+    PRODUCT_NAME: $(TARGET_NAME)
+    ALWAYS_SEARCH_USER_PATHS: NO
+  configs:
+    Debug: Configs/Project.xcconfig
+    Release: Configs/Project.xcconfig
 
 targets:
   RecallCore:
@@ -17,12 +24,21 @@ targets:
     platform: iOS
     sources:
       - RecallCore
+    configFiles:
+      Debug: Configs/RecallCore.xcconfig
+      Release: Configs/RecallCore.xcconfig
     settings:
       base:
+        PRODUCT_NAME: RecallCore
+        PRODUCT_MODULE_NAME: RecallCore
+        WRAPPER_NAME: RecallCore.framework
+        EXECUTABLE_NAME: RecallCore
         PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall.core
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
 
   Recall:
     type: application
@@ -31,8 +47,18 @@ targets:
       - Recall
     dependencies:
       - target: RecallCore
+        embed: true
+      - target: RecallShare
+        embed: true
+    configFiles:
+      Debug: Configs/Recall.xcconfig
+      Release: Configs/Recall.xcconfig
     settings:
       base:
+        PRODUCT_NAME: Recall
+        PRODUCT_MODULE_NAME: Recall
+        WRAPPER_NAME: Recall.app
+        EXECUTABLE_NAME: Recall
         PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Recall
@@ -43,6 +69,7 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_ENTITLEMENTS: Recall/Recall.entitlements
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
     entitlements:
       path: Recall/Recall.entitlements
       properties:
@@ -56,13 +83,24 @@ targets:
       - RecallShare
     dependencies:
       - target: RecallCore
+        embed: false
+    configFiles:
+      Debug: Configs/RecallShare.xcconfig
+      Release: Configs/RecallShare.xcconfig
     settings:
       base:
+        PRODUCT_NAME: RecallShare
+        PRODUCT_MODULE_NAME: RecallShare
+        WRAPPER_NAME: RecallShare.appex
+        EXECUTABLE_NAME: RecallShare
         PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall.share
         INFOPLIST_FILE: RecallShare/Info.plist
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_ENTITLEMENTS: RecallShare/RecallShare.entitlements
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
     entitlements:
       path: RecallShare/RecallShare.entitlements
       properties:
@@ -76,8 +114,16 @@ targets:
       - RecallCoreTests
     dependencies:
       - target: RecallCore
+        embed: false
+    configFiles:
+      Debug: Configs/RecallCoreTests.xcconfig
+      Release: Configs/RecallCoreTests.xcconfig
     settings:
       base:
+        PRODUCT_NAME: RecallCoreTests
+        PRODUCT_MODULE_NAME: RecallCoreTests
+        WRAPPER_NAME: RecallCoreTests.xctest
+        EXECUTABLE_NAME: RecallCoreTests
         PRODUCT_BUNDLE_IDENTIFIER: com.jwu0216.recall.core.tests
         GENERATE_INFOPLIST_FILE: YES
 

@@ -1,0 +1,14 @@
+#include "Shared.xcconfig"
+
+PRODUCT_NAME = RecallShare
+PRODUCT_MODULE_NAME = RecallShare
+WRAPPER_NAME = RecallShare.appex
+EXECUTABLE_NAME = RecallShare
+PRODUCT_BUNDLE_IDENTIFIER = com.jwu0216.recall.share
+INFOPLIST_FILE = RecallShare/Info.plist
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+CODE_SIGN_ENTITLEMENTS = RecallShare/RecallShare.entitlements
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
+SKIP_INSTALL = YES
+APPLICATION_EXTENSION_API_ONLY = YES

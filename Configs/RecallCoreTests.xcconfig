@@ -1,0 +1,8 @@
+#include "Shared.xcconfig"
+
+PRODUCT_NAME = RecallCoreTests
+PRODUCT_MODULE_NAME = RecallCoreTests
+WRAPPER_NAME = RecallCoreTests.xctest
+EXECUTABLE_NAME = RecallCoreTests
+PRODUCT_BUNDLE_IDENTIFIER = com.jwu0216.recall.core.tests
+GENERATE_INFOPLIST_FILE = YES
