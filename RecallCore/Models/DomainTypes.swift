@@ -92,8 +92,14 @@ public struct MemoryItemSnapshot: Identifiable, Equatable, Sendable {
     }
 
     public var searchableText: String {
-        [title, summary, extractedText, tags.joined(separator: " ")]
-            .compactMap { $0 }
+        var parts: [String?] = [title, summary, extractedText, tags.joined(separator: " ")]
+        if let sourceURL {
+            parts.append(sourceURL.absoluteString)
+            parts.append(sourceURL.host)
+        }
+        return parts
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
             .joined(separator: "\n")
     }
 }

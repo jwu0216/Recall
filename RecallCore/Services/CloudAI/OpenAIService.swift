@@ -37,11 +37,15 @@ public final class OpenAIService: CloudAIService {
 
     public func describeImage(_ imageData: Data, ocrText: String?) async throws -> AIEnrichment {
         let base64 = imageData.base64EncodedString()
-        let ocrHint = ocrText.map { "OCR text:\n\($0)" } ?? ""
+        let ocrHint = ocrText.map { "OCR text from the image:\n\($0)" } ?? ""
         let content: [[String: Any]] = [
             [
                 "type": "text",
-                "text": "Describe this saved memory for search. Return JSON with keys title, summary, tags (array of short strings). \(ocrHint)"
+                "text": """
+                Label this saved personal memory for search.
+                Return JSON with keys title, summary, tags (array of short strings).
+                \(ocrHint)
+                """
             ],
             [
                 "type": "image_url",
@@ -52,7 +56,7 @@ public final class OpenAIService: CloudAIService {
         let responseText = try await requestChatCompletion(
             model: configuration.visionModel,
             messages: [
-                ["role": "system", "content": "You label personal memories for a search app. Respond with compact JSON only."],
+                ["role": "system", "content": Self.faithfulLabelingSystemPrompt],
                 ["role": "user", "content": content]
             ]
         )
@@ -64,11 +68,73 @@ public final class OpenAIService: CloudAIService {
         let responseText = try await requestChatCompletion(
             model: configuration.chatModel,
             messages: [
-                ["role": "system", "content": "Summarize saved content for search. Respond with JSON: title, summary, tags."],
-                ["role": "user", "content": text]
+                ["role": "system", "content": Self.faithfulLabelingSystemPrompt],
+                [
+                    "role": "user",
+                    "content": """
+                    Label this saved personal note for search.
+                    Return JSON with keys title, summary, tags (array of short strings).
+
+                    Note:
+                    \(text)
+                    """
+                ]
             ]
         )
         return parseEnrichment(from: responseText)
+    }
+
+    private static let faithfulLabelingSystemPrompt = """
+    You label personal memories for a private search app. Respond with compact JSON only: title, summary, tags.
+
+    Critical rules:
+    - Title and summary must be faithful to the source. Only use facts explicitly present in the user's note, URL, OCR text, or image.
+    - Do NOT invent details, adjectives, quality claims, or atmosphere in title/summary (e.g. "fresh ingredients", "authentic", "must-try", "cozy").
+    - If the note is short, keep the summary short. Paraphrase lightly; do not expand.
+    - Title: concise label from the source (keep proper names).
+    - Summary: 1 sentence max that restates only what was said.
+    - Tags: include words from the source PLUS broad Ask categories so plain-English search works.
+      Always add 1–2 parent genres people would type in Ask when clearly implied, not only the specific item.
+      Examples:
+        foundation/lipstick → makeup, cosmetics, beauty
+        restaurant / Yelp / Resy / cafe / pizza place → food, restaurant, dining
+        hotel booking / flight / Airbnb → travel, trip
+        jacket / sneakers / outfit → fashion, clothing
+        gym class / workout plan → fitness, health
+        tax PDF / invoice → finance, money
+        concert tickets / Netflix show → entertainment
+      Do not add unrelated tags. Prefer 3–8 short tags total.
+    """
+
+    /// Cheap auth check used before saving a key to Keychain.
+    public func validateAPIKey() async throws {
+        guard let url = URL(string: "https://api.openai.com/v1/models") else {
+            throw RecallStoreError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw RecallStoreError.apiKeyVerificationFailed
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw RecallStoreError.invalidResponse
+        }
+
+        switch http.statusCode {
+        case 200..<300:
+            return
+        case 401, 403:
+            throw RecallStoreError.invalidAPIKey
+        default:
+            throw RecallStoreError.apiKeyVerificationFailed
+        }
     }
 
     public func embed(_ text: String) async throws -> [Float] {
@@ -91,27 +157,62 @@ public final class OpenAIService: CloudAIService {
     }
 
     public func chat(system: String, messages: [ChatTurn], context: [MemoryItemSnapshot]) async throws -> String {
-        let contextBlock = context.map { item in
-            let title = item.title ?? "Untitled"
-            let body = item.searchableText
-            return "- \(title): \(body)"
-        }.joined(separator: "\n")
+        let contextBlock = Self.formatMemories(context)
+        let userQuestion = messages.last(where: { $0.role == "user" })?.content ?? ""
 
-        var apiMessages: [[String: Any]] = [
-            ["role": "system", "content": system],
-            ["role": "system", "content": "Memories:\n\(contextBlock)"]
+        let systemPrompt = """
+        \(system)
+
+        Rules:
+        - The memories below were already selected as matches for the user's question.
+        - You MUST answer using those memories. Quote or paraphrase the memory title.
+        - Do NOT say you could not find anything when memories are listed.
+        - Only if the memories list is empty may you say you could not find it.
+        - Plain text only. Never use Markdown (no [label](url), bold, or bullets).
+        - If a URL matters, write the full https://… address as plain text, or just name the saved memory — matching memories are shown separately in the app.
+        """
+
+        let userPrompt = """
+        Question: \(userQuestion)
+
+        Matched memories:
+        \(contextBlock.isEmpty ? "(none)" : contextBlock)
+
+        Answer the question from the matched memories above in plain text.
+        """
+
+        let apiMessages: [[String: Any]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": userPrompt]
         ]
 
-        apiMessages.append(contentsOf: messages.map { ["role": $0.role, "content": $0.content] })
-
         return try await requestChatCompletion(model: configuration.chatModel, messages: apiMessages)
+    }
+
+    public static func formatMemories(_ context: [MemoryItemSnapshot]) -> String {
+        context.enumerated().map { index, item in
+            var lines = ["\(index + 1). Title: \(item.title ?? "Untitled")"]
+            if let summary = item.summary, !summary.isEmpty {
+                lines.append("   Summary: \(summary)")
+            }
+            if let extractedText = item.extractedText, !extractedText.isEmpty {
+                lines.append("   Text: \(extractedText)")
+            }
+            if !item.tags.isEmpty {
+                lines.append("   Tags: \(item.tags.joined(separator: ", "))")
+            }
+            if let sourceURL = item.sourceURL {
+                lines.append("   URL: \(sourceURL.absoluteString)")
+            }
+            return lines.joined(separator: "\n")
+        }.joined(separator: "\n")
     }
 
     private func requestChatCompletion(model: String, messages: [[String: Any]]) async throws -> String {
         let body: [String: Any] = [
             "model": model,
             "messages": messages,
-            "temperature": 0.2
+            "temperature": 0
         ]
 
         let data = try await postJSON(path: "chat/completions", body: body)
