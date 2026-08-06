@@ -27,34 +27,116 @@ struct AddMemoryView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showPDFImporter = false
+    @State private var didSave = false
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("What do you want to remember?", text: $note, axis: .vertical)
-                        .lineLimit(4...12)
-                } header: {
-                    Text("Note")
-                } footer: {
-                    Text("Paste a thought, recipe, reminder, or anything you’d want to find later.")
-                }
+            ZStack {
+                PastelMeshBackground()
 
-                Section {
+                if didSave {
+                    successState
+                } else {
+                    editorContent
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .fileImporter(
+                isPresented: $showPDFImporter,
+                allowedContentTypes: [.pdf],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    importedPDFURL = urls.first
+                    if importedPDFURL != nil {
+                        selectedPhoto = nil
+                        selectedImageData = nil
+                    }
+                case .failure(let error):
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private var editorContent: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(RecallTheme.ink)
+                            .frame(width: 40, height: 40)
+                            .background(Color.white.opacity(0.75), in: Circle())
+                    }
+                    .disabled(isSaving)
+                    .accessibilityLabel("Cancel")
+
+                    Spacer()
+
+                    SectionLabel(text: "Add note")
+
+                    Spacer()
+
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.caption.weight(.bold))
+                            Text(isSaving ? "…" : "Save")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(RecallSecondaryButtonStyle())
+                    .disabled(!canSave || isSaving)
+                }
+                .padding(.top, 8)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Title your thought…", text: $note, axis: .vertical)
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(RecallTheme.ink)
+                        .lineLimit(3...12)
+
+                    Text("Paste a thought, recipe, reminder, or anything you’d want to find later.")
+                        .font(.subheadline)
+                        .foregroundStyle(RecallTheme.inkMuted)
+                }
+                .glassCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionLabel(text: "Link")
                     TextField("https://…", text: $linkText)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
-                } header: {
-                    Text("Link (optional)")
-                }
-
-                Section("Attachment (optional)") {
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Label(
-                            selectedImageData == nil ? "Add photo" : "Change photo",
-                            systemImage: "photo"
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: RecallTheme.controlRadius, style: .continuous)
+                                .fill(Color.white.opacity(0.7))
                         )
+                }
+                .glassCard()
+
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionLabel(text: "Attachment")
+
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        HStack {
+                            Image(systemName: "photo")
+                            Text(selectedImageData == nil ? "Add photo" : "Change photo")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(RecallTheme.inkSoft)
+                        }
+                        .foregroundStyle(RecallTheme.ink)
+                        .font(.subheadline.weight(.medium))
                     }
                     .onChange(of: selectedPhoto) { _, item in
                         Task { await loadPhoto(item) }
@@ -67,71 +149,111 @@ struct AddMemoryView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 160)
                             .clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .accessibilityLabel("Selected photo preview")
 
                         Button("Remove photo", role: .destructive) {
                             selectedPhoto = nil
                             selectedImageData = nil
                         }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(RecallTheme.danger)
                     }
 
                     Button {
                         showPDFImporter = true
                     } label: {
-                        Label(
-                            importedPDFURL == nil ? "Add PDF" : "PDF selected",
-                            systemImage: importedPDFURL == nil ? "doc.richtext" : "checkmark.circle.fill"
-                        )
+                        HStack {
+                            Image(systemName: importedPDFURL == nil ? "doc.richtext" : "checkmark.circle.fill")
+                            Text(importedPDFURL == nil ? "Add PDF" : "PDF selected")
+                            Spacer()
+                        }
+                        .foregroundStyle(RecallTheme.ink)
+                        .font(.subheadline.weight(.medium))
                     }
 
                     if importedPDFURL != nil {
                         Button("Remove PDF", role: .destructive) {
                             importedPDFURL = nil
                         }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(RecallTheme.danger)
                     }
                 }
+                .glassCard()
 
                 if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
-                    }
+                    Text(errorMessage)
+                        .foregroundStyle(RecallTheme.danger)
+                        .font(.footnote)
                 }
+
+                Button {
+                    Task { await save() }
+                } label: {
+                    Text(isSaving ? "Saving…" : "Save note")
+                }
+                .buttonStyle(RecallPrimaryButtonStyle(isEnabled: canSave && !isSaving))
+                .disabled(!canSave || isSaving)
+                .padding(.top, 4)
+
+                Spacer(minLength: 40)
             }
-            .navigationTitle("Add Memory")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSaving)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Save") {
-                        Task { await save() }
-                    }
-                    .disabled(!canSave || isSaving)
-                }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private var successState: some View {
+        VStack(spacing: 28) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                RecallTheme.accentWarm.opacity(0.9),
+                                RecallTheme.accent.opacity(0.55),
+                                RecallTheme.accentCool.opacity(0.35),
+                                .clear
+                            ],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 120
+                        )
+                    )
+                    .frame(width: 220, height: 220)
+                    .blur(radius: 8)
+
+                Circle()
+                    .fill(Color.white.opacity(0.85))
+                    .frame(width: 96, height: 96)
+                    .shadow(color: Color.black.opacity(0.08), radius: 16, y: 8)
+
+                Image(systemName: "checkmark")
+                    .font(.system(size: 36, weight: .bold))
+                    .foregroundStyle(RecallTheme.ink)
             }
-            .fileImporter(
-                isPresented: $showPDFImporter,
-                allowedContentTypes: [.pdf],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    importedPDFURL = urls.first
-                    // Prefer one attachment at a time.
-                    if importedPDFURL != nil {
-                        selectedPhoto = nil
-                        selectedImageData = nil
-                    }
-                case .failure(let error):
-                    errorMessage = error.localizedDescription
-                }
+
+            VStack(spacing: 8) {
+                Text("Successfully Saved!")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(RecallTheme.ink)
+                Text("Your note is ready whenever you need it.")
+                    .font(.subheadline)
+                    .foregroundStyle(RecallTheme.inkMuted)
             }
+
+            Spacer()
+
+            Button {
+                dismiss()
+            } label: {
+                Label("Back to Home", systemImage: "house.fill")
+            }
+            .buttonStyle(RecallPrimaryButtonStyle())
+            .padding(.horizontal, 28)
+            .padding(.bottom, 36)
         }
     }
 
@@ -213,7 +335,9 @@ struct AddMemoryView: View {
             }
 
             await processPendingIfPossible()
-            dismiss()
+            withAnimation(.easeOut(duration: 0.35)) {
+                didSave = true
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -230,7 +354,6 @@ struct AddMemoryView: View {
         guard let destination = AppGroupPaths.shared.uniqueMediaURL(fileExtension: "jpg") else {
             throw RecallStoreError.appGroupUnavailable
         }
-        // Prefer JPEG compression when the picker returns a full image payload.
         if let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.8) {
             try jpeg.write(to: destination, options: .atomic)
         } else {

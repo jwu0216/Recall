@@ -5,12 +5,12 @@ struct RootTabView: View {
         TabView {
             HomeView()
                 .tabItem {
-                    Label("Ask", systemImage: "sparkle.magnifyingglass")
+                    Label("Home", systemImage: "house")
                 }
 
             LibraryView()
                 .tabItem {
-                    Label("Library", systemImage: "tray.full")
+                    Label("Notes", systemImage: "square.stack")
                 }
 
             SettingsView()
@@ -18,5 +18,6 @@ struct RootTabView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
         }
+        .tint(RecallTheme.ink)
     }
 }

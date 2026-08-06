@@ -25,90 +25,140 @@ struct MemoryDetailView: View {
         if let memory = memories.first {
             let metadataDirty = isMetadataDirty(for: memory)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    TextField("Title", text: $editableTitle, axis: .vertical)
-                        .font(.title.bold())
-                        .lineLimit(1...4)
-                        .textInputAutocapitalization(.sentences)
-                        .onSubmit {
-                            if metadataDirty {
-                                saveMetadata(for: memory)
+            ZStack {
+                PastelMeshBackground()
+
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack {
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "chevron.left")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(RecallTheme.ink)
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.white.opacity(0.75), in: Circle())
                             }
+                            .accessibilityLabel("Back")
+
+                            Spacer()
+
+                            if metadataDirty {
+                                Button {
+                                    saveMetadata(for: memory)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "square.and.arrow.down")
+                                            .font(.caption.weight(.bold))
+                                        Text("Save")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                }
+                                .buttonStyle(RecallSecondaryButtonStyle())
+                            }
+
+                            Button {
+                                showingDeleteConfirmation = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(RecallTheme.danger)
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.white.opacity(0.75), in: Circle())
+                            }
+                            .accessibilityLabel("Delete")
+                        }
+                        .padding(.top, 8)
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            TextField("Title", text: $editableTitle, axis: .vertical)
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundStyle(RecallTheme.ink)
+                                .lineLimit(1...4)
+                                .textInputAutocapitalization(.sentences)
+                                .onSubmit {
+                                    if metadataDirty {
+                                        saveMetadata(for: memory)
+                                    }
+                                }
+
+                            Text(memory.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                .font(.caption)
+                                .foregroundStyle(RecallTheme.inkSoft)
+                        }
+                        .glassCard()
+
+                        if let mediaImage {
+                            Image(uiImage: mediaImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6)
+                                .accessibilityLabel("Memory photo")
                         }
 
-                    if let mediaImage {
-                        Image(uiImage: mediaImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .accessibilityLabel("Memory photo")
-                    }
-
-                    GroupBox("Summary") {
-                        TextField("Add a short summary", text: $editableSummary, axis: .vertical)
-                            .lineLimit(3...12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    if metadataDirty {
-                        Button("Save title & summary") {
-                            saveMetadata(for: memory)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-
-                    if let extractedText = memory.extractedText, !extractedText.isEmpty {
-                        GroupBox("Extracted text") {
-                            Text(extractedText)
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Summary")
+                            TextField("Add a short summary", text: $editableSummary, axis: .vertical)
+                                .font(.body)
+                                .foregroundStyle(RecallTheme.ink)
+                                .lineLimit(3...12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                    }
+                        .glassCard()
 
-                    TagEditorSection(tags: $editableTags) { tags in
-                        saveTags(tags, for: memory)
-                    }
+                        if metadataDirty {
+                            Button("Save title & summary") {
+                                saveMetadata(for: memory)
+                            }
+                            .buttonStyle(RecallPrimaryButtonStyle())
+                        }
 
-                    if let editStatus {
-                        Text(editStatus)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                        if let extractedText = memory.extractedText, !extractedText.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                SectionLabel(text: "Extracted text")
+                                Text(extractedText)
+                                    .font(.subheadline)
+                                    .foregroundStyle(RecallTheme.ink)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .glassCard()
+                        }
 
-                    GroupBox("Details") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Type: \(memory.contentType.rawValue)")
-                            Text("Source: \(memory.source.rawValue)")
-                            Text("Status: \(memory.processingStatus.rawValue)")
+                        TagEditorSection(tags: $editableTags) { tags in
+                            saveTags(tags, for: memory)
+                        }
+
+                        if let editStatus {
+                            Text(editStatus)
+                                .font(.footnote)
+                                .foregroundStyle(RecallTheme.inkMuted)
+                                .padding(.horizontal, 4)
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Details")
+                            detailRow("Type", memory.contentType.rawValue.capitalized)
+                            detailRow("Source", memory.source.rawValue.capitalized)
+                            detailRow("Status", memory.processingStatus.rawValue.capitalized)
                             if let sourceURL = memory.sourceURL {
                                 Link(sourceURL.absoluteString, destination: sourceURL)
+                                    .font(.footnote)
+                                    .foregroundStyle(RecallTheme.ink)
                                     .lineLimit(2)
                                     .truncationMode(.middle)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard()
+
+                        Spacer(minLength: 40)
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-            }
-            .navigationTitle("Memory")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    if metadataDirty {
-                        Button("Save") {
-                            saveMetadata(for: memory)
-                        }
-                    }
-                }
-                ToolbarItem(placement: .destructiveAction) {
-                    Button("Delete", role: .destructive) {
-                        showingDeleteConfirmation = true
-                    }
+                    .padding(.horizontal, 20)
                 }
             }
+            .toolbar(.hidden, for: .navigationBar)
             .confirmationDialog(
                 "Delete this memory?",
                 isPresented: $showingDeleteConfirmation,
@@ -144,7 +194,22 @@ struct MemoryDetailView: View {
                 }
             }
         } else {
-            ContentUnavailableView("Memory not found", systemImage: "questionmark.folder")
+            ZStack {
+                PastelMeshBackground()
+                ContentUnavailableView("Memory not found", systemImage: "questionmark.folder")
+            }
+        }
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(RecallTheme.inkMuted)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(RecallTheme.ink)
         }
     }
 

@@ -16,29 +16,38 @@ final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        view.backgroundColor = .systemBackground
+        let ink = UIColor(red: 0.12, green: 0.12, blue: 0.14, alpha: 1)
+        let muted = UIColor(red: 0.42, green: 0.42, blue: 0.46, alpha: 1)
+        view.backgroundColor = UIColor(red: 0.97, green: 0.96, blue: 0.95, alpha: 1)
 
         titleLabel.text = "Save to Recall"
-        titleLabel.font = .preferredFont(forTextStyle: .title2)
+        titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
+        titleLabel.textColor = ink
         titleLabel.textAlignment = .center
 
         previewLabel.numberOfLines = 4
         previewLabel.textAlignment = .center
-        previewLabel.textColor = .secondaryLabel
+        previewLabel.textColor = muted
         previewLabel.font = .preferredFont(forTextStyle: .body)
         previewLabel.text = detectedSummary
 
         statusLabel.numberOfLines = 0
         statusLabel.textAlignment = .center
         statusLabel.font = .preferredFont(forTextStyle: .footnote)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.textColor = muted
         statusLabel.text = "Recall will tag this later when you open the app."
 
-        saveButton.setTitle("Save", for: .normal)
-        saveButton.titleLabel?.font = .boldSystemFont(ofSize: 17)
+        var config = UIButton.Configuration.filled()
+        config.title = "Save"
+        config.baseBackgroundColor = ink
+        config.baseForegroundColor = .white
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28)
+        saveButton.configuration = config
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
 
         spinner.hidesWhenStopped = true
+        spinner.color = ink
 
         let stack = UIStackView(arrangedSubviews: [
             titleLabel,
@@ -48,13 +57,13 @@ final class ShareViewController: UIViewController {
             saveButton
         ])
         stack.axis = .vertical
-        stack.spacing = 16
+        stack.spacing = 18
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
 

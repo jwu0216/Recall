@@ -4,63 +4,72 @@ struct OnboardingView: View {
     @Binding var hasCompletedOnboarding: Bool
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer()
+        ZStack {
+            PastelMeshBackground()
 
-            Text("Recall")
-                .font(.largeTitle.bold())
+            VStack(spacing: 28) {
+                Spacer()
 
-            Text("Save it. Ask for it later.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                VStack(spacing: 12) {
+                    Text("Recall")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundStyle(RecallTheme.ink)
 
-            VStack(alignment: .leading, spacing: 16) {
-                onboardingRow(
-                    icon: "plus.circle",
-                    title: "Add it yourself",
-                    detail: "Type a note, paste a link, or attach a photo/PDF from inside Recall."
-                )
-                onboardingRow(
-                    icon: "square.and.arrow.up",
-                    title: "Or share from any app",
-                    detail: "Safari, Mail, Notes, and more — tap Share → Recall."
-                )
-                onboardingRow(
-                    icon: "sparkle.magnifyingglass",
-                    title: "Ask in plain English",
-                    detail: "“chicken wings recipe”, “tax thing”, “blue jacket I saved”."
-                )
-                onboardingRow(
-                    icon: "key",
-                    title: "Add your OpenAI key",
-                    detail: "For now you’ll paste your own API key in Settings (dev mode)."
-                )
+                    Text("Save it. Find it later.")
+                        .font(.title3)
+                        .foregroundStyle(RecallTheme.inkMuted)
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    onboardingRow(
+                        icon: "plus.circle",
+                        title: "Add it yourself",
+                        detail: "Type a note, paste a link, or attach a photo/PDF."
+                    )
+                    onboardingRow(
+                        icon: "square.and.arrow.up",
+                        title: "Or share from any app",
+                        detail: "Safari, Mail, Notes — tap Share → Recall."
+                    )
+                    onboardingRow(
+                        icon: "magnifyingglass",
+                        title: "Ask in plain English",
+                        detail: "“chicken wings recipe”, “tax thing”, “blue jacket”."
+                    )
+                    onboardingRow(
+                        icon: "key",
+                        title: "Add your OpenAI key",
+                        detail: "Paste your own API key in Settings (dev mode)."
+                    )
+                }
+                .glassCard()
+                .padding(.horizontal, 20)
+
+                Spacer()
+
+                Button("Get started") {
+                    hasCompletedOnboarding = true
+                }
+                .buttonStyle(RecallPrimaryButtonStyle())
+                .padding(.horizontal, 28)
+                .padding(.bottom, 36)
             }
-            .padding(.horizontal)
-
-            Spacer()
-
-            Button("Get started") {
-                hasCompletedOnboarding = true
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.bottom, 32)
         }
-        .padding()
     }
 
     private func onboardingRow(icon: String, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.title3)
                 .frame(width: 32)
-                .foregroundStyle(.tint)
+                .foregroundStyle(RecallTheme.ink)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline)
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(RecallTheme.ink)
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(RecallTheme.inkMuted)
             }
         }
     }

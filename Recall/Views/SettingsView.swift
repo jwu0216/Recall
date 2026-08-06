@@ -16,69 +16,118 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    SecureField("sk-…", text: $apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .disabled(isValidatingKey)
+            ZStack {
+                PastelMeshBackground()
 
-                    Button(isValidatingKey ? "Checking…" : "Save API Key") {
-                        Task { await saveAPIKey() }
-                    }
-                    .disabled(isValidatingKey || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } header: {
-                    Text("OpenAI (dev mode)")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Your key stays on this device. Subscriptions come later for public launch.")
-                        if let apiKeyStatus {
-                            Text(apiKeyStatus)
-                                .foregroundStyle(.secondary)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionLabel(text: "Settings")
+                            Text("Preferences")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(RecallTheme.ink)
                         }
-                    }
-                }
+                        .padding(.top, 8)
 
-                Section {
-                    LabeledContent("Memories", value: "\(memories.count)")
-                    LabeledContent("Pending tags", value: "\(pendingJobs.count)")
-                    LabeledContent("Failed", value: "\(failedJobs.count)")
-                    Button(isProcessing ? "Processing…" : "Process pending now") {
-                        Task { await processPending() }
-                    }
-                    .disabled(isProcessing || pendingJobs.isEmpty || apiKey.isEmpty)
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionLabel(text: "OpenAI (dev mode)")
+                            SecureField("sk-…", text: $apiKey)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .disabled(isValidatingKey)
+                                .padding(14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: RecallTheme.controlRadius, style: .continuous)
+                                        .fill(Color.white.opacity(0.7))
+                                )
 
-                    Button(isProcessing ? "Refreshing…" : "Refresh search index") {
-                        Task { await rebuildSearchIndex() }
-                    }
-                    .disabled(isProcessing || memories.isEmpty || apiKey.isEmpty)
-                } header: {
-                    Text("Library")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Refresh rebuilds embeddings for Ask. Memories you’ve edited keep their title, summary, and tags.")
-                        if let libraryStatus {
-                            Text(libraryStatus)
-                                .foregroundStyle(.secondary)
+                            Button(isValidatingKey ? "Checking…" : "Save API Key") {
+                                Task { await saveAPIKey() }
+                            }
+                            .buttonStyle(RecallPrimaryButtonStyle(
+                                isEnabled: !isValidatingKey && !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ))
+                            .disabled(isValidatingKey || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                            Text("Your key stays on this device. Subscriptions come later for public launch.")
+                                .font(.footnote)
+                                .foregroundStyle(RecallTheme.inkMuted)
+
+                            if let apiKeyStatus {
+                                Text(apiKeyStatus)
+                                    .font(.footnote)
+                                    .foregroundStyle(RecallTheme.inkMuted)
+                            }
                         }
+                        .glassCard()
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionLabel(text: "Library")
+                            statRow("Memories", "\(memories.count)")
+                            statRow("Pending tags", "\(pendingJobs.count)")
+                            statRow("Failed", "\(failedJobs.count)")
+
+                            Button(isProcessing ? "Processing…" : "Process pending now") {
+                                Task { await processPending() }
+                            }
+                            .buttonStyle(RecallSecondaryButtonStyle())
+                            .disabled(isProcessing || pendingJobs.isEmpty || apiKey.isEmpty)
+
+                            Button(isProcessing ? "Refreshing…" : "Refresh search index") {
+                                Task { await rebuildSearchIndex() }
+                            }
+                            .buttonStyle(RecallSecondaryButtonStyle())
+                            .disabled(isProcessing || memories.isEmpty || apiKey.isEmpty)
+
+                            Text("Refresh rebuilds embeddings for search. Edited notes keep their title, summary, and tags.")
+                                .font(.footnote)
+                                .foregroundStyle(RecallTheme.inkMuted)
+
+                            if let libraryStatus {
+                                Text(libraryStatus)
+                                    .font(.footnote)
+                                    .foregroundStyle(RecallTheme.inkMuted)
+                            }
+                        }
+                        .glassCard()
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Future")
+                            Text("Photo library")
+                                .font(.headline)
+                                .foregroundStyle(RecallTheme.ink)
+                            Text("V2 — Coming soon. Opt-in only, OCR first, pause anytime.")
+                                .font(.subheadline)
+                                .foregroundStyle(RecallTheme.inkMuted)
+                        }
+                        .glassCard()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionLabel(text: "About")
+                            Text("Recall V1: Add notes manually or via Share, then find them in plain English.")
+                                .font(.footnote)
+                                .foregroundStyle(RecallTheme.inkMuted)
+                        }
+                        .glassCard()
+
+                        Spacer(minLength: 40)
                     }
-                }
-
-                Section {
-                    LabeledContent("Photo library", value: "V2 — Coming soon")
-                } header: {
-                    Text("Future")
-                } footer: {
-                    Text("When Photos arrives: opt-in only, low-detail vision, OCR first, cost estimate before indexing, pause anytime. See PRODUCT.md.")
-                }
-
-                Section("About") {
-                    Text("Recall V1: Add memories manually or via Share, then ask in plain English.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
                 }
             }
-            .navigationTitle("Settings")
+            .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private func statRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(RecallTheme.inkMuted)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(RecallTheme.ink)
         }
     }
 
@@ -100,7 +149,6 @@ struct SettingsView: View {
             apiKey = key
             apiKeyStatus = "API key saved."
         } catch {
-            // Keep any previously saved key; only reject this new value.
             apiKeyStatus = error.localizedDescription
         }
     }

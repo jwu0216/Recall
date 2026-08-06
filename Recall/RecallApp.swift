@@ -24,6 +24,8 @@ struct RecallApp: App {
                     OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
                 }
             }
+            .tint(RecallTheme.ink)
+            .preferredColorScheme(.light)
             .modelContainer(container)
         }
         .onChange(of: scenePhase) { _, newPhase in

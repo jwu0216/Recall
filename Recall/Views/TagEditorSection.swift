@@ -7,50 +7,58 @@ struct TagEditorSection: View {
     @State private var draft = ""
 
     var body: some View {
-        GroupBox("Tags") {
-            VStack(alignment: .leading, spacing: 12) {
-                if tags.isEmpty {
-                    Text("No tags yet. Add a few so Ask can find this memory.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    FlowLayout(spacing: 8) {
-                        ForEach(tags, id: \.self) { tag in
-                            HStack(spacing: 4) {
-                                Text(tag)
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(text: "Tags")
 
-                                Button {
-                                    remove(tag)
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Remove \(tag)")
+            if tags.isEmpty {
+                Text("No tags yet. Add a few so you can find this note later.")
+                    .font(.subheadline)
+                    .foregroundStyle(RecallTheme.inkMuted)
+            } else {
+                FlowLayout(spacing: 8) {
+                    ForEach(tags, id: \.self) { tag in
+                        HStack(spacing: 4) {
+                            Text(tag)
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+
+                            Button {
+                                remove(tag)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(RecallTheme.inkSoft)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.secondary.opacity(0.14), in: Capsule())
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(tag)")
                         }
+                        .foregroundStyle(RecallTheme.ink)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(RecallTheme.accent.opacity(0.18), in: Capsule())
                     }
                 }
-
-                HStack(spacing: 8) {
-                    TextField("Add tag", text: $draft)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit(addFromDraft)
-
-                    Button("Add", action: addFromDraft)
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                TextField("Add tag", text: $draft)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: RecallTheme.controlRadius, style: .continuous)
+                            .fill(Color.white.opacity(0.7))
+                    )
+                    .onSubmit(addFromDraft)
+
+                Button("Add", action: addFromDraft)
+                    .buttonStyle(RecallSecondaryButtonStyle())
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard()
     }
 
     private func addFromDraft() {
@@ -92,7 +100,6 @@ private struct FlowLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let maxWidth = proposal.width ?? 0
         let arrangement = arrange(subviews: subviews, maxWidth: maxWidth)
-        // Prefer the proposed width so a long chip cannot widen the page.
         let width = proposal.width ?? arrangement.size.width
         return CGSize(width: width, height: arrangement.size.height)
     }
