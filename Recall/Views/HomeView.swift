@@ -24,134 +24,56 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if let statusBanner {
-                        Text(statusBanner)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                    }
+            ZStack {
+                PastelMeshBackground()
 
-                    if !pendingJobs.isEmpty {
-                        HStack {
-                            if isProcessing {
-                                ProgressView()
-                            }
-                            Text(pendingJobsMessage)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 22) {
+                        header
+
+                        if let statusBanner {
+                            statusPill(statusBanner)
+                        }
+
+                        if !pendingJobs.isEmpty {
+                            statusPill(pendingJobsMessage, showsProgress: isProcessing)
+                        }
+
+                        askSection
+
+                        if memories.isEmpty && answer.isEmpty && !isSearching {
+                            emptyStateCard
+                        }
+
+                        notesSection
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .foregroundStyle(RecallTheme.danger)
                                 .font(.footnote)
+                                .padding(.horizontal, 4)
                         }
+
+                        Spacer(minLength: 100)
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .animation(.easeOut(duration: 0.35), value: citedResults.map(\.id))
+                    .animation(.easeOut(duration: 0.35), value: isGeneratingAnswer)
+                    .animation(.easeOut(duration: 0.45), value: answerOpacity)
+                }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("What are you trying to recall?")
-                            .font(.title2.bold())
-
-                        TextField("chicken wings recipe, blue jacket, tax thing...", text: $question, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
-                            .lineLimit(1...4)
-
-                        Button(isSearching ? "Searching..." : "Ask Recall") {
-                            Task { await askRecall() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
-                    }
-
-                    if memories.isEmpty && answer.isEmpty && !isSearching {
-                        GroupBox("How to get started") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("1. Add your OpenAI API key in Settings")
-                                Text("2. Tap + to add a note, or Share → Recall from another app")
-                                Text("3. Ask for what you saved")
-                            }
-                            .font(.subheadline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Button("Add a memory") {
-                                showingAddMemory = true
-                            }
-                            .buttonStyle(.bordered)
-                            .padding(.top, 4)
-                        }
-                    }
-
-                    if isGeneratingAnswer {
-                        GroupBox("Answer") {
-                            ProgressView()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .transition(.opacity)
-                    } else if !answer.isEmpty {
-                        GroupBox("Answer") {
-                            Text(answerAttributed)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .opacity(answerOpacity)
-                                .textSelection(.enabled)
-                        }
-                        .transition(.opacity.combined(with: .offset(y: 6)))
-                    }
-
-                    if !citedResults.isEmpty {
-                        GroupBox("Matching memories") {
-                            VStack(spacing: 12) {
-                                ForEach(citedResults) { result in
-                                    NavigationLink {
-                                        MemoryDetailView(memoryID: result.item.id)
-                                    } label: {
-                                        MemoryRowView(snapshot: result.item, score: result.score)
-                                    }
-                                }
-                            }
-                        }
-                        .transition(.opacity.combined(with: .offset(y: 8)))
-                    } else if !answer.isEmpty && !isGeneratingAnswer {
-                        Text("No strong matches — try different words, or add another memory.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    GroupBox("Recent") {
-                        if memories.isEmpty {
-                            Text("Nothing saved yet. Tap + to add something, or Share from another app.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            VStack(spacing: 12) {
-                                ForEach(memories.prefix(5), id: \.id) { memory in
-                                    NavigationLink {
-                                        MemoryDetailView(memoryID: memory.id)
-                                    } label: {
-                                        MemoryRowView(snapshot: memory.snapshot(), score: nil)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+                VStack {
+                    Spacer()
+                    HStack {
+                        FloatingAddButton { showingAddMemory = true }
+                            .padding(.leading, 22)
+                            .padding(.bottom, 12)
+                        Spacer()
                     }
                 }
-                .padding()
-                .animation(.easeOut(duration: 0.35), value: citedResults.map(\.id))
-                .animation(.easeOut(duration: 0.35), value: isGeneratingAnswer)
-                .animation(.easeOut(duration: 0.45), value: answerOpacity)
             }
-            .navigationTitle("Recall")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingAddMemory = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Add memory")
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingAddMemory) {
                 AddMemoryView()
             }
@@ -162,13 +84,191 @@ struct HomeView: View {
                 await processPendingJobsIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: RecallConstants.storeNeedsRefreshNotification)) { _ in
-                // Processing already ran in RecallApp; just clear a stale banner if needed.
                 if pendingJobs.isEmpty {
                     statusBanner = nil
                 }
             }
         }
     }
+
+    // MARK: - Sections
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [RecallTheme.accentWarm, RecallTheme.accent],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Text("R")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+
+                Spacer()
+
+                Image(systemName: "line.3.horizontal")
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(RecallTheme.ink)
+                    .opacity(0.35)
+                    .accessibilityHidden(true)
+            }
+
+            Text("Your Thoughts,\nOne Place.")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(RecallTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+        }
+    }
+
+    private var askSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("What are you trying to recall?")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(RecallTheme.ink)
+
+                TextField("chicken wings recipe, blue jacket…", text: $question, axis: .vertical)
+                    .font(.body)
+                    .foregroundStyle(RecallTheme.ink)
+                    .lineLimit(1...4)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: RecallTheme.controlRadius, style: .continuous)
+                            .fill(Color.white.opacity(0.7))
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: RecallTheme.controlRadius, style: .continuous)
+                            .strokeBorder(Color.black.opacity(0.05), lineWidth: 1)
+                    }
+
+                Button {
+                    Task { await askRecall() }
+                } label: {
+                    Text(isSearching ? "Searching…" : "Search memories")
+                }
+                .buttonStyle(RecallPrimaryButtonStyle(
+                    isEnabled: !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSearching
+                ))
+                .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
+            }
+            .glassCard()
+
+            if isGeneratingAnswer {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionLabel(text: "Answer")
+                    ProgressView()
+                        .tint(RecallTheme.ink)
+                }
+                .glassCard()
+                .transition(.opacity)
+            } else if !answer.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionLabel(text: "Answer")
+                    Text(answerAttributed)
+                        .foregroundStyle(RecallTheme.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(answerOpacity)
+                        .textSelection(.enabled)
+                }
+                .glassCard()
+                .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+
+            if !citedResults.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionLabel(text: "Matching notes")
+                    ForEach(citedResults) { result in
+                        NavigationLink {
+                            MemoryDetailView(memoryID: result.item.id)
+                        } label: {
+                            MemoryRowView(snapshot: result.item, score: result.score)
+                                .glassCard(padding: 16)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .transition(.opacity.combined(with: .offset(y: 8)))
+            } else if !answer.isEmpty && !isGeneratingAnswer {
+                Text("No strong matches — try different words, or add another note.")
+                    .font(.footnote)
+                    .foregroundStyle(RecallTheme.inkMuted)
+            }
+        }
+    }
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(text: "Recent")
+
+            if memories.isEmpty {
+                Text("Nothing saved yet. Tap + to add something, or Share from another app.")
+                    .font(.subheadline)
+                    .foregroundStyle(RecallTheme.inkMuted)
+                    .glassCard()
+            } else {
+                ForEach(memories.prefix(5), id: \.id) { memory in
+                    NavigationLink {
+                        MemoryDetailView(memoryID: memory.id)
+                    } label: {
+                        MemoryRowView(snapshot: memory.snapshot(), score: nil)
+                            .glassCard(padding: 18)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var emptyStateCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionLabel(text: "Getting started")
+            Text("Save a thought.\nFind it later.")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(RecallTheme.ink)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("1. Add your OpenAI API key in Settings")
+                Text("2. Tap + to add a note, or Share → Recall")
+                Text("3. Ask for what you saved")
+            }
+            .font(.subheadline)
+            .foregroundStyle(RecallTheme.inkMuted)
+
+            Button("Add a note") {
+                showingAddMemory = true
+            }
+            .buttonStyle(RecallSecondaryButtonStyle())
+            .padding(.top, 2)
+        }
+        .glassCard()
+    }
+
+    private func statusPill(_ text: String, showsProgress: Bool = false) -> some View {
+        HStack(spacing: 10) {
+            if showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(RecallTheme.ink)
+            }
+            Text(text)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(RecallTheme.inkMuted)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.55), in: Capsule())
+    }
+
+    // MARK: - Ask logic (unchanged behavior)
 
     private func askRecall() async {
         askGeneration += 1
@@ -210,7 +310,6 @@ struct HomeView: View {
                 in: readyMemories.isEmpty ? memories : readyMemories
             )
 
-            // Show matches immediately while the answer is still loading.
             withAnimation(.easeOut(duration: 0.35)) {
                 citedResults = results
             }
@@ -236,7 +335,6 @@ struct HomeView: View {
             )
             guard generation == askGeneration else { return }
 
-            // Search already found matches — never show a false "not found" from the model.
             let finalAnswer = looksLikeNotFound(response)
                 ? groundedAnswer(for: question, from: matchedItems)
                 : Self.sanitizeAnswer(response)
@@ -260,7 +358,6 @@ struct HomeView: View {
         return AttributedString(answer)
     }
 
-    /// Fades the answer in and reveals it in short word bursts, similar to AI overview UIs.
     private func presentAnswer(_ fullText: String, generation: Int) async {
         guard generation == askGeneration else { return }
 
@@ -294,7 +391,6 @@ struct HomeView: View {
         answerOpacity = 1
     }
 
-    /// Turn `[label](url)` into readable plain text before display.
     private static func sanitizeAnswer(_ text: String) -> String {
         let pattern = #"\[([^\]]+)\]\(([^)]+)\)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
@@ -362,9 +458,9 @@ struct HomeView: View {
             return "Tagging \(pendingJobs.count) saved item(s)…"
         }
         if !hasAPIKey {
-            return "\(pendingJobs.count) item(s) waiting to be tagged. Add your API key in Settings, then pull to refresh."
+            return "\(pendingJobs.count) item(s) waiting. Add your API key in Settings."
         }
-        return "\(pendingJobs.count) item(s) waiting to be tagged. Pull to refresh to finish."
+        return "\(pendingJobs.count) item(s) waiting. Pull to refresh."
     }
 
     private func processPendingJobsIfNeeded() async {
