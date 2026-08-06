@@ -16,13 +16,18 @@ public enum RecallModelContainerFactory {
             return try ModelContainer(for: schema, configurations: [configuration])
         }
 
-        if let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
-            let storeURL = groupURL.appendingPathComponent("Recall.store")
-            let configuration = ModelConfiguration(schema: schema, url: storeURL)
-            return try ModelContainer(for: schema, configurations: [configuration])
+        // Require the App Group. A silent local fallback made Share writes land in a
+        // different store than the main app (so links appeared "saved" but never showed up).
+        guard
+            let groupURL = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: appGroupID
+            )
+        else {
+            throw RecallStoreError.appGroupUnavailable
         }
 
-        let fallback = ModelConfiguration(schema: schema)
-        return try ModelContainer(for: schema, configurations: [fallback])
+        let storeURL = groupURL.appendingPathComponent("Recall.store")
+        let configuration = ModelConfiguration(schema: schema, url: storeURL)
+        return try ModelContainer(for: schema, configurations: [configuration])
     }
 }
