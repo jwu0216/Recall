@@ -8,15 +8,18 @@ options:
   # Prefer a stable project format; Xcode 26 objectVersion 77 has been dropping PRODUCT_NAME in IDE builds.
   xcodeVersion: "15.0"
 
+# Project-level xcconfigs belong in `configFiles`, not `settings.configs`
+# (`settings.configs` must be setting maps, which broke CI XcodeGen).
+configFiles:
+  Debug: Configs/Project.xcconfig
+  Release: Configs/Project.xcconfig
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: ""
     PRODUCT_NAME: $(TARGET_NAME)
     ALWAYS_SEARCH_USER_PATHS: NO
-  configs:
-    Debug: Configs/Project.xcconfig
-    Release: Configs/Project.xcconfig
 
 targets:
   RecallCore:
