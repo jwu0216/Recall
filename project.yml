@@ -5,8 +5,11 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
   groupSortPosition: top
-  # Prefer a stable project format; Xcode 26 objectVersion 77 has been dropping PRODUCT_NAME in IDE builds.
+  # Keep CI (Xcode 15.4) and local builds on a compatible pbxproj format.
+  # Latest XcodeGen defaults to objectVersion 77, which Xcode 15 cannot open.
   xcodeVersion: "15.0"
+  projectFormat: xcode15_0
+  postGenCommand: "python3 scripts/pin_xcode_project_format.py"
 
 # Project-level xcconfigs belong in `configFiles`, not `settings.configs`
 # (`settings.configs` must be setting maps, which broke CI XcodeGen).
