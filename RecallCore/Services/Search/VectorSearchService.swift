@@ -5,6 +5,90 @@ public enum VectorSearchService {
     /// High enough to drop unrelated queries; low enough for category→item matches (e.g. "makeup" → foundation).
     public static let minimumVectorScore: Double = 0.28
 
+    /// Synonym groups for plain-English Ask. Any term in a group expands to the whole group
+    /// so "food"↔"restaurant", "makeup"↔"foundation", "travel"↔"hotel", etc.
+    private static let categoryGroups: [[String]] = [
+        // Food & drink
+        [
+            "food", "restaurant", "dining", "cafe", "coffee", "pizza", "recipe",
+            "meal", "eat", "eatery", "bakery", "brunch", "lunch", "dinner",
+            "menu", "kitchen", "bar", "bistro", "sushi", "ramen", "taco",
+            "burger", "cooking", "bake", "ingredients", "yelp", "resy", "opentable"
+        ],
+        // Beauty
+        [
+            "makeup", "cosmetics", "beauty", "foundation", "lipstick", "skincare",
+            "concealer", "blush", "mascara", "serum", "moisturizer"
+        ],
+        // Fashion
+        [
+            "fashion", "clothing", "clothes", "outfit", "style", "jacket", "dress",
+            "shoes", "sneakers", "apparel", "wardrobe"
+        ],
+        // Travel
+        [
+            "travel", "trip", "flight", "hotel", "airbnb", "vacation", "itinerary",
+            "booking", "airport", "passport", "luggage"
+        ],
+        // Home
+        [
+            "home", "apartment", "furniture", "decor", "house", "kitchenware",
+            "cleaning", "ikea"
+        ],
+        // Work / productivity
+        [
+            "work", "job", "office", "meeting", "career", "resume", "interview",
+            "slack", "notion", "productivity"
+        ],
+        // Health & fitness
+        [
+            "health", "fitness", "gym", "workout", "exercise", "doctor", "medical",
+            "pharmacy", "wellness", "running"
+        ],
+        // Entertainment
+        [
+            "movie", "film", "tv", "show", "netflix", "music", "spotify", "concert",
+            "podcast", "book", "reading", "game", "gaming"
+        ],
+        // Shopping
+        [
+            "shopping", "store", "shop", "buy", "purchase", "amazon", "order",
+            "gift", "wishlist"
+        ],
+        // Tech
+        [
+            "tech", "software", "app", "gadget", "phone", "laptop", "computer",
+            "github", "code", "ai"
+        ],
+        // Finance
+        [
+            "finance", "money", "budget", "bank", "tax", "invoice", "receipt",
+            "investing", "salary"
+        ],
+        // People / social
+        [
+            "people", "friend", "family", "contact", "birthday", "party", "wedding",
+            "social"
+        ],
+        // Places / local
+        [
+            "place", "location", "map", "address", "neighborhood", "city", "park"
+        ]
+    ]
+
+    private static let categoryExpansions: [String: [String]] = {
+        var index: [String: [String]] = [:]
+        for group in categoryGroups {
+            let normalized = group.map { normalize($0) }
+            for term in normalized {
+                var merged = Set(index[term] ?? [])
+                merged.formUnion(normalized)
+                index[term] = Array(merged)
+            }
+        }
+        return index
+    }()
+
     public static func cosineSimilarity(_ lhs: [Float], _ rhs: [Float]) -> Double {
         guard lhs.count == rhs.count, !lhs.isEmpty else { return 0 }
 
@@ -50,7 +134,8 @@ public enum VectorSearchService {
     ) -> [MemorySearchResult] {
         let normalizedQuery = normalize(query)
         let terms = tokenize(normalizedQuery)
-        guard !normalizedQuery.isEmpty else { return [] }
+        let matchTerms = expandedMatchTerms(for: normalizedQuery, terms: terms)
+        guard !normalizedQuery.isEmpty, !matchTerms.isEmpty else { return [] }
 
         let scored = items.compactMap { item -> MemorySearchResult? in
             let haystack = normalize(item.snapshot().searchableText)
@@ -61,24 +146,26 @@ public enum VectorSearchService {
                 return MemorySearchResult(item: item.snapshot(), score: 1.5)
             }
 
-            guard !terms.isEmpty else { return nil }
-
-            let hits = terms.filter { haystack.contains($0) }
-            // For multi-word names, require at least one strong token (3+ chars)
-            // or all tokens if they're all short.
+            let hits = matchTerms.filter { haystack.contains($0) }
             let strongHits = hits.filter { $0.count >= 3 }
+            let isCategoryQuery = categoryExpansions[normalizedQuery] != nil
+
             let isMatch: Bool
-            if terms.contains(where: { $0.count >= 3 }) {
+            if isCategoryQuery {
+                // "food" should match memories tagged restaurant/dining/etc.
+                isMatch = !strongHits.isEmpty || !hits.isEmpty
+            } else if terms.contains(where: { $0.count >= 3 }) {
                 isMatch = !strongHits.isEmpty
             } else {
                 isMatch = hits.count == terms.count
             }
             guard isMatch else { return nil }
 
-            let density = Double(hits.count) / Double(max(terms.count, 1))
+            let density = Double(hits.count) / Double(max(matchTerms.count, 1))
+            let categoryBonus = isCategoryQuery && !hits.isEmpty ? 0.35 : 0
             return MemorySearchResult(
                 item: item.snapshot(),
-                score: density + Double(strongHits.count) * 0.15
+                score: density + Double(strongHits.count) * 0.15 + categoryBonus
             )
         }
 
@@ -155,5 +242,18 @@ public enum VectorSearchService {
             .split(whereSeparator: \.isWhitespace)
             .map(String.init)
             .filter { $0.count >= 2 }
+    }
+
+    private static func expandedMatchTerms(for normalizedQuery: String, terms: [String]) -> [String] {
+        var expanded = Set(terms)
+        if let aliases = categoryExpansions[normalizedQuery] {
+            expanded.formUnion(aliases.map { normalize($0) })
+        }
+        for term in terms {
+            if let aliases = categoryExpansions[term] {
+                expanded.formUnion(aliases.map { normalize($0) })
+            }
+        }
+        return Array(expanded)
     }
 }

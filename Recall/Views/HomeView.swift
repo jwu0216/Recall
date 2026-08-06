@@ -37,10 +37,10 @@ struct HomeView: View {
 
                     if !pendingJobs.isEmpty {
                         HStack {
-                            ProgressView()
-                            Text(isProcessing
-                                  ? "Tagging \(pendingJobs.count) saved item(s)…"
-                                  : "\(pendingJobs.count) item(s) waiting to be tagged. Open Settings for your API key, then pull to refresh.")
+                            if isProcessing {
+                                ProgressView()
+                            }
+                            Text(pendingJobsMessage)
                                 .font(.footnote)
                         }
                     }
@@ -86,9 +86,10 @@ struct HomeView: View {
                         .transition(.opacity)
                     } else if !answer.isEmpty {
                         GroupBox("Answer") {
-                            Text(answer)
+                            Text(answerAttributed)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .opacity(answerOpacity)
+                                .textSelection(.enabled)
                         }
                         .transition(.opacity.combined(with: .offset(y: 6)))
                     }
@@ -160,6 +161,12 @@ struct HomeView: View {
             .task {
                 await processPendingJobsIfNeeded()
             }
+            .onReceive(NotificationCenter.default.publisher(for: RecallConstants.storeNeedsRefreshNotification)) { _ in
+                // Processing already ran in RecallApp; just clear a stale banner if needed.
+                if pendingJobs.isEmpty {
+                    statusBanner = nil
+                }
+            }
         }
     }
 
@@ -222,6 +229,7 @@ struct HomeView: View {
                 system: """
                 You are Recall, a personal memory assistant for the user's private notes.
                 Answer briefly from the matched memories. Mention the memory title.
+                Use plain text only — never Markdown links like [here](url).
                 """,
                 messages: [ChatTurn(role: "user", content: question)],
                 context: matchedItems
@@ -231,7 +239,7 @@ struct HomeView: View {
             // Search already found matches — never show a false "not found" from the model.
             let finalAnswer = looksLikeNotFound(response)
                 ? groundedAnswer(for: question, from: matchedItems)
-                : response
+                : Self.sanitizeAnswer(response)
             await presentAnswer(finalAnswer, generation: generation)
         } catch {
             guard generation == askGeneration else { return }
@@ -242,9 +250,21 @@ struct HomeView: View {
         }
     }
 
+    private var answerAttributed: AttributedString {
+        if let markdown = try? AttributedString(
+            markdown: answer,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            return markdown
+        }
+        return AttributedString(answer)
+    }
+
     /// Fades the answer in and reveals it in short word bursts, similar to AI overview UIs.
     private func presentAnswer(_ fullText: String, generation: Int) async {
         guard generation == askGeneration else { return }
+
+        let text = Self.sanitizeAnswer(fullText)
 
         withAnimation(.easeOut(duration: 0.2)) {
             isGeneratingAnswer = false
@@ -252,7 +272,7 @@ struct HomeView: View {
             answerOpacity = 0
         }
 
-        let words = fullText.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         var assembled = ""
 
         withAnimation(.easeOut(duration: 0.45)) {
@@ -270,8 +290,34 @@ struct HomeView: View {
         }
 
         guard generation == askGeneration else { return }
-        answer = fullText
+        answer = text
         answerOpacity = 1
+    }
+
+    /// Turn `[label](url)` into readable plain text before display.
+    private static func sanitizeAnswer(_ text: String) -> String {
+        let pattern = #"\[([^\]]+)\]\(([^)]+)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        var result = text
+        let matches = regex.matches(in: text, range: nsRange).reversed()
+        for match in matches {
+            guard
+                let labelRange = Range(match.range(at: 1), in: result),
+                let urlRange = Range(match.range(at: 2), in: result),
+                let fullRange = Range(match.range, in: result)
+            else { continue }
+
+            let label = String(result[labelRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let url = String(result[urlRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let genericLabels: Set<String> = ["here", "this", "link", "page", "url", "site"]
+            let replacement = genericLabels.contains(label.lowercased())
+                ? url
+                : "\(label) (\(url))"
+            result.replaceSubrange(fullRange, with: replacement)
+        }
+        return result
     }
 
     private func looksLikeNotFound(_ text: String) -> Bool {
@@ -305,6 +351,20 @@ struct HomeView: View {
             return "From your memory “\(title)”: \(snippet)"
         }
         return "I found a matching memory: “\(title)”."
+    }
+
+    private var hasAPIKey: Bool {
+        !(APIKeyStore.load() ?? "").isEmpty
+    }
+
+    private var pendingJobsMessage: String {
+        if isProcessing {
+            return "Tagging \(pendingJobs.count) saved item(s)…"
+        }
+        if !hasAPIKey {
+            return "\(pendingJobs.count) item(s) waiting to be tagged. Add your API key in Settings, then pull to refresh."
+        }
+        return "\(pendingJobs.count) item(s) waiting to be tagged. Pull to refresh to finish."
     }
 
     private func processPendingJobsIfNeeded() async {

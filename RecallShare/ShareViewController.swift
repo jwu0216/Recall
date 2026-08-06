@@ -62,36 +62,15 @@ final class ShareViewController: UIViewController {
     }
 
     private func inspectSharedContent() async {
-        guard let extensionItems = extensionContext?.inputItems as? [NSExtensionItem] else {
+        do {
+            let payload = try await collectSharedPayload(persistMedia: false)
+            detectedSummary = payload.previewSummary
+            previewLabel.text = detectedSummary
+            saveButton.isEnabled = payload.hasContent
+        } catch {
             previewLabel.text = "Nothing to save."
             saveButton.isEnabled = false
-            return
         }
-
-        var kinds: [String] = []
-
-        for item in extensionItems {
-            for provider in item.attachments ?? [] {
-                if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                    if let url = try? await loadURL(from: provider) {
-                        kinds.append("Link: \(url.host ?? url.absoluteString)")
-                    }
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                    kinds.append("Image")
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
-                    kinds.append("PDF")
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                    if let text = try? await loadText(from: provider) {
-                        let preview = String(text.prefix(100))
-                        kinds.append("Text: \(preview)")
-                    }
-                }
-            }
-        }
-
-        detectedSummary = kinds.isEmpty ? "Unsupported content." : kinds.joined(separator: "\n")
-        previewLabel.text = detectedSummary
-        saveButton.isEnabled = !kinds.isEmpty
     }
 
     @objc private func saveTapped() {
@@ -106,61 +85,82 @@ final class ShareViewController: UIViewController {
         spinner.startAnimating()
         statusLabel.text = "Saving…"
 
-        guard let extensionItems = extensionContext?.inputItems as? [NSExtensionItem] else {
-            finishWithError("No shared items found.")
-            return
-        }
-
         do {
+            let payload = try await collectSharedPayload(persistMedia: true)
+            guard payload.hasContent else {
+                finishWithError("Could not save this content.")
+                return
+            }
+
             let container = try RecallModelContainerFactory.makeContainer()
             let context = ModelContext(container)
+            let note = payload.accompanyingNote
+            let linkedURL = payload.webURLs.first
             var savedCount = 0
 
-            for item in extensionItems {
-                let attachments = item.attachments ?? []
-
-                for provider in attachments {
-                    if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
-                       let url = try await loadURL(from: provider) {
-                        try ProcessingQueueService.enqueue(
-                            contentType: .link,
-                            sourceURL: url,
-                            note: item.attributedContentText?.string,
-                            modelContext: context
-                        )
-                        savedCount += 1
-                    } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
-                              let text = try await loadText(from: provider) {
-                        try ProcessingQueueService.enqueue(
-                            contentType: .text,
-                            note: text,
-                            modelContext: context
-                        )
-                        savedCount += 1
-                    } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier),
-                              let filename = try await saveImage(from: provider) {
-                        try ProcessingQueueService.enqueue(
-                            contentType: .image,
-                            note: item.attributedContentText?.string,
-                            payloadFilename: filename,
-                            modelContext: context
-                        )
-                        savedCount += 1
-                    } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier),
-                              let filename = try await savePDF(from: provider) {
-                        try ProcessingQueueService.enqueue(
-                            contentType: .pdf,
-                            note: item.attributedContentText?.string,
-                            payloadFilename: filename,
-                            modelContext: context
-                        )
-                        savedCount += 1
-                    }
+            switch payload.saveMode {
+            case .images:
+                // Image share (often includes an embedded/page URL) → one image memory.
+                for filename in payload.imageFilenames {
+                    try ProcessingQueueService.enqueue(
+                        contentType: .image,
+                        sourceURL: linkedURL,
+                        note: note,
+                        payloadFilename: filename,
+                        modelContext: context
+                    )
+                    savedCount += 1
+                }
+            case .pdfs:
+                for filename in payload.pdfFilenames {
+                    try ProcessingQueueService.enqueue(
+                        contentType: .pdf,
+                        sourceURL: linkedURL,
+                        note: note,
+                        payloadFilename: filename,
+                        modelContext: context
+                    )
+                    savedCount += 1
+                }
+            case .links:
+                // One Share action → one link. Safari often attaches the same URL twice
+                // (URL item + plain-text URL); dedupe before enqueueing.
+                var enqueuedLinkKeys = Set<String>()
+                for url in payload.webURLs {
+                    let key = Self.canonicalURLKey(url)
+                    guard enqueuedLinkKeys.insert(key).inserted else { continue }
+                    try ProcessingQueueService.enqueue(
+                        contentType: .link,
+                        sourceURL: url,
+                        note: note,
+                        modelContext: context
+                    )
+                    savedCount += 1
+                }
+            case .text:
+                for text in payload.standaloneTexts {
+                    try ProcessingQueueService.enqueue(
+                        contentType: .text,
+                        note: text,
+                        modelContext: context
+                    )
+                    savedCount += 1
                 }
             }
 
             guard savedCount > 0 else {
                 finishWithError("Could not save this content.")
+                return
+            }
+
+            // Confirm the job is actually in the shared store before dismissing.
+            let pendingRaw = ProcessingStatus.pending.rawValue
+            let verify = FetchDescriptor<ProcessingJob>(
+                predicate: #Predicate { $0.statusRaw == pendingRaw }
+            )
+            let pendingCount = try context.fetchCount(verify)
+            guard pendingCount > 0 else {
+                finishWithError("Saved locally, but Recall couldn’t confirm the shared queue. Try again.")
                 return
             }
 
@@ -175,6 +175,183 @@ final class ShareViewController: UIViewController {
         } catch {
             finishWithError(error.localizedDescription)
         }
+    }
+
+    private enum SaveMode {
+        case images
+        case pdfs
+        case links
+        case text
+    }
+
+    private struct SharedPayload {
+        var urls: [URL] = []
+        var imageFilenames: [String] = []
+        var pdfFilenames: [String] = []
+        var imageCount = 0
+        var pdfCount = 0
+        var texts: [String] = []
+        var attributedNotes: [String] = []
+
+        var webURLs: [URL] {
+            urls.filter { url in
+                let scheme = url.scheme?.lowercased()
+                return scheme == "http" || scheme == "https"
+            }
+        }
+
+        var hasContent: Bool {
+            switch saveMode {
+            case .images: return !imageFilenames.isEmpty || imageCount > 0
+            case .pdfs: return !pdfFilenames.isEmpty || pdfCount > 0
+            case .links: return !webURLs.isEmpty
+            case .text: return !standaloneTexts.isEmpty
+            }
+        }
+
+        /// If Safari provides both an image and a URL, keep the image and store the URL on it.
+        var saveMode: SaveMode {
+            if !imageFilenames.isEmpty || imageCount > 0 { return .images }
+            if !pdfFilenames.isEmpty || pdfCount > 0 { return .pdfs }
+            if !webURLs.isEmpty { return .links }
+            return .text
+        }
+
+        /// Text used as a note on link/image/PDF memories; empty when text-only share.
+        var accompanyingNote: String? {
+            switch saveMode {
+            case .text:
+                return nil
+            case .images, .pdfs, .links:
+                break
+            }
+            let urlStrings = Set(urls.map(\.absoluteString))
+            let candidates = (attributedNotes + texts)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .filter { !urlStrings.contains($0) }
+            return candidates.first
+        }
+
+        var standaloneTexts: [String] {
+            texts
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        var previewSummary: String {
+            switch saveMode {
+            case .images:
+                let images = max(imageFilenames.count, imageCount)
+                if let url = webURLs.first {
+                    return images <= 1
+                        ? "Image\n\(url.host ?? url.absoluteString)"
+                        : "\(images) images\n\(url.host ?? url.absoluteString)"
+                }
+                return images <= 1 ? "Image" : "\(images) images"
+            case .pdfs:
+                let pdfs = max(pdfFilenames.count, pdfCount)
+                return pdfs <= 1 ? "PDF" : "\(pdfs) PDFs"
+            case .links:
+                if let url = webURLs.first {
+                    let host = url.host ?? url.absoluteString
+                    if let note = accompanyingNote {
+                        return "Link: \(host)\n\(note)"
+                    }
+                    return "Link: \(host)"
+                }
+                return "Link"
+            case .text:
+                if let text = standaloneTexts.first {
+                    return "Text: \(String(text.prefix(100)))"
+                }
+                return "Unsupported content."
+            }
+        }
+    }
+
+    private func collectSharedPayload(persistMedia: Bool) async throws -> SharedPayload {
+        guard let extensionItems = extensionContext?.inputItems as? [NSExtensionItem] else {
+            return SharedPayload()
+        }
+
+        var payload = SharedPayload()
+        var seenURLs = Set<String>()
+
+        for item in extensionItems {
+            if let raw = item.attributedContentText?.string {
+                let attributed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !attributed.isEmpty {
+                    payload.attributedNotes.append(attributed)
+                }
+            }
+
+            for provider in item.attachments ?? [] {
+                // Pull every representation Safari offers. Image shares often declare URL
+                // first; if we only trust that order, photos incorrectly become links.
+                if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                    if persistMedia {
+                        if let filename = try await saveImage(from: provider) {
+                            payload.imageFilenames.append(filename)
+                        }
+                    } else {
+                        payload.imageCount += 1
+                    }
+                }
+
+                if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+                    if persistMedia {
+                        if let filename = try await savePDF(from: provider) {
+                            payload.pdfFilenames.append(filename)
+                        }
+                    } else {
+                        payload.pdfCount += 1
+                    }
+                }
+
+                if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
+                   let url = try await loadURL(from: provider),
+                   seenURLs.insert(Self.canonicalURLKey(url)).inserted
+                {
+                    payload.urls.append(url)
+                }
+
+                if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
+                   let text = try await loadText(from: provider)
+                {
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+
+                    if let url = URL(string: trimmed),
+                       let scheme = url.scheme?.lowercased(),
+                       scheme == "http" || scheme == "https"
+                    {
+                        if seenURLs.insert(Self.canonicalURLKey(url)).inserted {
+                            payload.urls.append(url)
+                        }
+                    } else {
+                        payload.texts.append(trimmed)
+                    }
+                }
+            }
+        }
+
+        return payload
+    }
+
+    private static func canonicalURLKey(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString.lowercased()
+        }
+        components.fragment = nil
+        if let host = components.host {
+            components.host = host.lowercased()
+        }
+        if components.path.count > 1, components.path.hasSuffix("/") {
+            components.path.removeLast()
+        }
+        components.scheme = components.scheme?.lowercased()
+        return (components.url ?? url).absoluteString
     }
 
     private func loadURL(from provider: NSItemProvider) async throws -> URL? {
@@ -217,15 +394,46 @@ final class ShareViewController: UIViewController {
         }
     }
 
+    private func imageTypeIdentifiers(for provider: NSItemProvider) -> [String] {
+        var identifiers = provider.registeredTypeIdentifiers.filter { id in
+            if let type = UTType(id), type.conforms(to: .image) { return true }
+            let lower = id.lowercased()
+            return lower.contains("image")
+                || lower.hasSuffix("jpeg")
+                || lower.hasSuffix("jpg")
+                || lower.hasSuffix("png")
+                || lower.hasSuffix("heic")
+                || lower.hasSuffix("gif")
+                || lower.hasSuffix("webp")
+        }
+        if identifiers.isEmpty {
+            identifiers = [UTType.image.identifier, UTType.jpeg.identifier, UTType.png.identifier]
+        }
+        return identifiers
+    }
+
     private func saveImage(from provider: NSItemProvider) async throws -> String? {
         guard let mediaDirectory = AppGroupPaths.shared.mediaDirectory else {
             throw RecallStoreError.appGroupUnavailable
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: UTType.image.identifier, options: nil) { item, error in
-                if let error {
-                    continuation.resume(throwing: error)
+        for typeIdentifier in imageTypeIdentifiers(for: provider) {
+            if let filename = try await saveImage(from: provider, typeIdentifier: typeIdentifier, to: mediaDirectory) {
+                return filename
+            }
+        }
+        return nil
+    }
+
+    private func saveImage(
+        from provider: NSItemProvider,
+        typeIdentifier: String,
+        to mediaDirectory: URL
+    ) async throws -> String? {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
+                if error != nil {
+                    continuation.resume(returning: nil)
                     return
                 }
 
@@ -234,13 +442,16 @@ final class ShareViewController: UIViewController {
                     let destination = mediaDirectory.appendingPathComponent(filename)
 
                     if let url = item as? URL {
+                        // May be a file URL or a direct image URL from Safari.
                         let data = try Data(contentsOf: url)
-                        // Compress to keep Share extension memory under control
-                        if let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.75) {
-                            try jpeg.write(to: destination)
-                        } else {
-                            try data.write(to: destination)
+                        guard let image = UIImage(data: data),
+                              let jpeg = image.jpegData(compressionQuality: 0.75)
+                        else {
+                            // Not decodable image bytes (e.g. an HTML page URL).
+                            continuation.resume(returning: nil)
+                            return
                         }
+                        try jpeg.write(to: destination)
                     } else if let image = item as? UIImage, let data = image.jpegData(compressionQuality: 0.75) {
                         try data.write(to: destination)
                     } else if let data = item as? Data {
@@ -256,7 +467,7 @@ final class ShareViewController: UIViewController {
 
                     continuation.resume(returning: filename)
                 } catch {
-                    continuation.resume(throwing: error)
+                    continuation.resume(returning: nil)
                 }
             }
         }

@@ -101,4 +101,57 @@ final class VectorSearchServiceTests: XCTestCase {
             "joes pizza"
         )
     }
+
+    func testKeywordFallbackFoodQueryMatchesRestaurantTaggedMemory() {
+        let item = MemoryItem(
+            source: .share,
+            contentType: .link,
+            title: "Sole Uptown",
+            summary: "Italian restaurant on Broadway",
+            extractedText: "https://www.yelp.com/biz/sole-uptown",
+            tags: ["restaurant", "italian", "dining"],
+            sourceURL: URL(string: "https://www.yelp.com/biz/sole-uptown"),
+            processingStatus: .ready
+        )
+
+        let results = VectorSearchService.keywordFallback(query: "food", in: [item])
+        XCTAssertEqual(results.first?.item.title, "Sole Uptown")
+    }
+
+    func testKeywordFallbackCategoryGroupsWorkAcrossGenres() {
+        let makeup = MemoryItem(
+            source: .manual,
+            contentType: .text,
+            title: "Winter foundation",
+            tags: ["foundation", "sephora"],
+            processingStatus: .ready
+        )
+        let hotel = MemoryItem(
+            source: .share,
+            contentType: .link,
+            title: "Kyoto stay",
+            tags: ["hotel", "kyoto"],
+            processingStatus: .ready
+        )
+        let jacket = MemoryItem(
+            source: .manual,
+            contentType: .image,
+            title: "Blue jacket",
+            tags: ["jacket", "uniqlo"],
+            processingStatus: .ready
+        )
+
+        XCTAssertEqual(
+            VectorSearchService.keywordFallback(query: "makeup", in: [makeup]).first?.item.title,
+            "Winter foundation"
+        )
+        XCTAssertEqual(
+            VectorSearchService.keywordFallback(query: "travel", in: [hotel]).first?.item.title,
+            "Kyoto stay"
+        )
+        XCTAssertEqual(
+            VectorSearchService.keywordFallback(query: "fashion", in: [jacket]).first?.item.title,
+            "Blue jacket"
+        )
+    }
 }

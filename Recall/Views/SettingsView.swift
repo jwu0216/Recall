@@ -12,20 +12,21 @@ struct SettingsView: View {
     @State private var apiKeyStatus: String?
     @State private var libraryStatus: String?
     @State private var isProcessing = false
+    @State private var isValidatingKey = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     SecureField("sk-…", text: $apiKey)
-                    Button("Save API Key") {
-                        do {
-                            try APIKeyStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-                            apiKeyStatus = "API key saved."
-                        } catch {
-                            apiKeyStatus = error.localizedDescription
-                        }
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .disabled(isValidatingKey)
+
+                    Button(isValidatingKey ? "Checking…" : "Save API Key") {
+                        Task { await saveAPIKey() }
                     }
+                    .disabled(isValidatingKey || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 } header: {
                     Text("OpenAI (dev mode)")
                 } footer: {
@@ -78,6 +79,29 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+        }
+    }
+
+    private func saveAPIKey() async {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            apiKeyStatus = "Enter an API key first."
+            return
+        }
+
+        isValidatingKey = true
+        apiKeyStatus = "Checking key…"
+        defer { isValidatingKey = false }
+
+        do {
+            let service = OpenAIService(configuration: OpenAIConfiguration(apiKey: key))
+            try await service.validateAPIKey()
+            try APIKeyStore.save(key)
+            apiKey = key
+            apiKeyStatus = "API key saved."
+        } catch {
+            // Keep any previously saved key; only reject this new value.
+            apiKeyStatus = error.localizedDescription
         }
     }
 

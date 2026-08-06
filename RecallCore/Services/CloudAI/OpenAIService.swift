@@ -93,10 +93,49 @@ public final class OpenAIService: CloudAIService {
     - If the note is short, keep the summary short. Paraphrase lightly; do not expand.
     - Title: concise label from the source (keep proper names).
     - Summary: 1 sentence max that restates only what was said.
-    - Tags: include words from the source PLUS a few strongly implied search categories so Ask works in plain English.
-      Examples: foundation/lipstick → makeup, cosmetics; margherita/Sole Uptown → pizza, restaurant; wings recipe → food, recipe.
+    - Tags: include words from the source PLUS broad Ask categories so plain-English search works.
+      Always add 1–2 parent genres people would type in Ask when clearly implied, not only the specific item.
+      Examples:
+        foundation/lipstick → makeup, cosmetics, beauty
+        restaurant / Yelp / Resy / cafe / pizza place → food, restaurant, dining
+        hotel booking / flight / Airbnb → travel, trip
+        jacket / sneakers / outfit → fashion, clothing
+        gym class / workout plan → fitness, health
+        tax PDF / invoice → finance, money
+        concert tickets / Netflix show → entertainment
       Do not add unrelated tags. Prefer 3–8 short tags total.
     """
+
+    /// Cheap auth check used before saving a key to Keychain.
+    public func validateAPIKey() async throws {
+        guard let url = URL(string: "https://api.openai.com/v1/models") else {
+            throw RecallStoreError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw RecallStoreError.apiKeyVerificationFailed
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw RecallStoreError.invalidResponse
+        }
+
+        switch http.statusCode {
+        case 200..<300:
+            return
+        case 401, 403:
+            throw RecallStoreError.invalidAPIKey
+        default:
+            throw RecallStoreError.apiKeyVerificationFailed
+        }
+    }
 
     public func embed(_ text: String) async throws -> [Float] {
         let body: [String: Any] = [
@@ -129,6 +168,8 @@ public final class OpenAIService: CloudAIService {
         - You MUST answer using those memories. Quote or paraphrase the memory title.
         - Do NOT say you could not find anything when memories are listed.
         - Only if the memories list is empty may you say you could not find it.
+        - Plain text only. Never use Markdown (no [label](url), bold, or bullets).
+        - If a URL matters, write the full https://… address as plain text, or just name the saved memory — matching memories are shown separately in the app.
         """
 
         let userPrompt = """
@@ -137,7 +178,7 @@ public final class OpenAIService: CloudAIService {
         Matched memories:
         \(contextBlock.isEmpty ? "(none)" : contextBlock)
 
-        Answer the question from the matched memories above.
+        Answer the question from the matched memories above in plain text.
         """
 
         let apiMessages: [[String: Any]] = [
