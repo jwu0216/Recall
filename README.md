@@ -2,6 +2,21 @@
 
 Recall is a personal AI memory app for iOS. Save links, images, PDFs, and text through the Share sheet, then ask natural-language questions like "the chicken wings recipe" or "the blue jacket I saved."
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/01-home.png" width="220" alt="Home screen with search and recent memories"/><br/><sub>Home: search and recent memories</sub></td>
+    <td align="center"><img src="docs/screenshots/02-ask-answer.png" width="220" alt="Natural-language question with an AI answer and matching notes"/><br/><sub>Ask a question, get an answer with sources</sub></td>
+    <td align="center"><img src="docs/screenshots/03-note-tags.png" width="220" alt="Saved link with summary, extracted text, and tags"/><br/><sub>Saved link: summary, extracted text, tags</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/04-photo-note.png" width="220" alt="Photo memory with an AI summary and tags"/><br/><sub>Photo memory with AI summary and tags</sub></td>
+    <td align="center"><img src="docs/screenshots/05-add-note.png" width="220" alt="Add note screen with link and attachments"/><br/><sub>Add a note, link, photo, or PDF</sub></td>
+    <td align="center"><img src="docs/screenshots/06-share-sheet.png" width="220" alt="Share Sheet extension saving a link to Recall"/><br/><sub>Save from any app via the Share Sheet</sub></td>
+  </tr>
+</table>
+
 ## Product status
 
 **V1 (now):** Share + Ask only · user OpenAI API key (dev)  
