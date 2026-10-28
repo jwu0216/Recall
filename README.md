@@ -17,6 +17,26 @@ Recall is a personal AI memory app for iOS. Save links, images, PDFs, and text t
   </tr>
 </table>
 
+## How it works
+
+Saving and asking are two separate pipelines.
+
+**Saving a memory** (`MemoryProcessor`)
+
+1. Content from the Share Sheet extension or the in-app Add screen is queued as a processing job, so saving doesn't wait on the AI calls.
+2. For images and photos, Apple's Vision framework runs OCR on the device.
+3. `gpt-4o-mini` writes a title, summary, and tags, from the text for links and notes, or from the file itself for photos and PDFs.
+4. The title, summary, extracted text, URL, and tags are combined and embedded with `text-embedding-3-small`. The vector is stored with the memory in SwiftData on the device.
+
+**Asking a question** (`VectorSearchService`)
+
+1. The question is embedded with the same model.
+2. Ranking runs on the device: cosine similarity against every stored memory, with a minimum score of 0.28 to drop unrelated results.
+3. A keyword pass runs alongside it. It catches exact names that embeddings can miss, like a restaurant's name, and expands category words through synonym groups, so "makeup" also finds "foundation."
+4. The two result lists are merged, and the top matches go to `gpt-4o-mini` as context. The prompt tells it to answer only from those memories, and the app shows the matched memories alongside the answer.
+
+Settings has a re-index action that rebuilds every embedding and refreshes AI summaries and tags (labels you edited by hand are kept). `VectorSearchService` has unit tests in `RecallCoreTests`.
+
 ## Product status
 
 **V1 (now):** Share + Ask only · user OpenAI API key (dev)  
@@ -37,15 +57,6 @@ See [PRODUCT.md](PRODUCT.md) for locked decisions.
 2. Commit and push to GitHub
 3. GitHub Actions compiles on a macOS runner
 4. For simulator testing, use MacinCloud and run `xcodegen generate`
-
-## Push from Windows
-
-```bash
-cd /d/Recall
-git add .
-git commit -m "Your message"
-git push
-```
 
 ## Generate Xcode project on Mac
 
